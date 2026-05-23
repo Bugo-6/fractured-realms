@@ -1,147 +1,211 @@
-import { Chapter, UnitClassId, ArmyComp } from './types';
+import type { ChapterDef, SaveState } from './types';
 
-export const CHAPTERS: Chapter[] = [
+const COL_REYES = 0x4ade80;
+const COL_NARRATOR = 0x9ca3af;
+const COL_ENEMY = 0xb91c1c;
+const COL_VERA = 0x06b6d4;
+const COL_AI = 0xf43f5e;
+
+export const CAMPAIGN: ChapterDef[] = [
+  {
+    id: 0,
+    title: 'First Contact',
+    arena: 'desertTown',
+    recommended: 80,
+    reward: 120,
+    unlocks: ['heavy', 'medic'],
+    briefing: [
+      { speaker: 'NARRATOR', speakerColor: COL_NARRATOR, text: '2041. The Gray Fever turned millions into Ferals. The dead walk the dust.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'This is what is left of Redrock. Our last outpost in the western dead zone.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'A horde is closing on the town. Hold the line, soldiers. No one gets through.' },
+    ],
+    victory: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'The horde broke against us. Redrock stands another day.' },
+      { speaker: 'NARRATOR', speakerColor: COL_NARRATOR, text: 'Scavengers recovered heavy ordnance from the ruins. New units are available.' },
+    ],
+    defeat: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'Fall back! Redrock is overrun... regroup and try again.' },
+    ],
+    enemies: [
+      { type: 'zombie', count: 8 },
+      { type: 'feral', count: 3 },
+    ],
+  },
   {
     id: 1,
-    title: 'The Awakening',
-    subtitle: 'Chapter I',
-    enemyLabel: 'Orc Horde',
-    preStory:
-      'The ancient realm of Aldor trembles. Orc warbands pour from the mountains, burning villages. A council of elders summons you — the Eternal Commander — from legend.',
-    quoteA: '"Commander, the orcs number in the dozens. Our knights stand ready."',
-    quoteB: '"Show no mercy. The realm depends on it."',
-    postStoryWin:
-      'The warband is broken. The villages are safe — for now. The elders speak of rifts opening across the land. Something pulls armies from other worlds through. You must grow your forces.',
-    postStoryLose:
-      'The knights fell. Regroup, Commander. Study the enemy composition and return stronger.',
-    enemyArmy: [{ classId: 'orc', count: 22 }],
-    reward: 260,
-    unlocks: ['archer'] as UnitClassId[],
-    terrain: 'hills',
+    title: 'River Crossing',
+    arena: 'coastalRuins',
+    recommended: 140,
+    reward: 160,
+    unlocks: ['biker', 'sniper'],
+    briefing: [
+      { speaker: 'NARRATOR', speakerColor: COL_NARRATOR, text: 'The old coast highway bridge. Beyond it, the sea swallows the ruined cities.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'Mutant raiders have claimed this crossing. We need it to reach the mainland.' },
+      { speaker: 'RAIDER', speakerColor: COL_ENEMY, text: 'Flesh-things! The bridge is OURS. Come and bleed on it.' },
+    ],
+    victory: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'Bridge secured. The raiders fled into the tide.' },
+      { speaker: 'NARRATOR', speakerColor: COL_NARRATOR, text: 'Local militia join your cause, bringing bikes and rifles.' },
+    ],
+    defeat: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'They pushed us off the bridge. We bleed for nothing today.' },
+    ],
+    enemies: [
+      { type: 'feral', count: 5 },
+      { type: 'brute', count: 2 },
+      { type: 'zombie', count: 4 },
+    ],
   },
   {
     id: 2,
-    title: 'Blood and Iron',
-    subtitle: 'Chapter II',
-    enemyLabel: 'Iron Legion',
-    preStory:
-      'A dimensional rift tears open to the south. Through it march the Iron Legion — Roman soldiers from another age, armed with pilum and gladius. They see your kingdom as a new conquest.',
-    quoteA: '"They come in perfect formation. Disciplined. Deadly."',
-    quoteB: '"But formations can be broken, Commander."',
-    postStoryWin:
-      'The legions are defeated. Their general kneels and offers his sword in alliance. The Iron Legion joins your cause. New fighters are available for hire.',
-    postStoryLose:
-      'Their formation held. Numbers and positioning matter here — study their tactics.',
-    enemyArmy: [
-      { classId: 'roman', count: 22 },
-      { classId: 'gladiator', count: 7 },
+    title: 'Protocol Zero',
+    arena: 'industrial',
+    recommended: 220,
+    reward: 220,
+    unlocks: ['combatBot', 'warDrone'],
+    briefing: [
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Commander, this is Vera. I have decrypted the factory layout. It builds the machine army.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'A rogue military AI runs this plant. We shut it down, we slow the robots.' },
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Warning: automated defenders online. Killer Bots inbound.' },
     ],
-    reward: 420,
-    unlocks: ['roman', 'gladiator', 'mage'] as UnitClassId[],
-    terrain: 'desert',
+    victory: [
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Factory core disabled. I have salvaged combat chassis schematics for you.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'Now we build our own machines. Good work, Vera.' },
+    ],
+    defeat: [
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Defenders have repelled us. Recommend tactical withdrawal, Commander.' },
+    ],
+    enemies: [
+      { type: 'killerBot', count: 6 },
+      { type: 'robotTank', count: 1 },
+    ],
   },
   {
     id: 3,
-    title: 'Signal Lost',
-    subtitle: 'Chapter III',
-    enemyLabel: 'Machine Swarm',
-    preStory:
-      'A temporal portal explodes open. Steel soldiers with glowing optics pour through — machines of war from a future realm. They call themselves Hunter-Killers, and they take no prisoners.',
-    quoteA: '"Commander — no heartbeat, no breath. These warriors are machines."',
-    quoteB: '"Then we break them like machines — with enough force."',
-    postStoryWin:
-      'The machine swarm is disabled. From the wreckage you recover schematics — and a War Mech that chose to defect. Technology is now yours to command.',
-    postStoryLose:
-      'The machines were too precise. Ranged units and heavy armor are your best bet.',
-    enemyArmy: [
-      { classId: 'robot', count: 22 },
-      { classId: 'mech', count: 3 },
+    title: 'Desert Storm',
+    arena: 'desertOpen',
+    recommended: 280,
+    reward: 260,
+    briefing: [
+      { speaker: 'NARRATOR', speakerColor: COL_NARRATOR, text: 'The open dunes. No cover. No mercy. Only sun and sand.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'It is an ambush. Mutants and machines both. Form up and fight back to back!' },
+      { speaker: 'RAIDER', speakerColor: COL_ENEMY, text: 'The desert eats the weak. We will pick your bones clean.' },
     ],
-    reward: 620,
-    unlocks: ['soldier', 'mech', 'drone'] as UnitClassId[],
-    terrain: 'industrial',
+    victory: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'We turned their ambush into their grave. Onward to the hive.' },
+    ],
+    defeat: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'The sand drinks our blood. Pull out before it is too late.' },
+    ],
+    enemies: [
+      { type: 'feral', count: 6 },
+      { type: 'brute', count: 3 },
+      { type: 'killerBot', count: 3 },
+    ],
   },
   {
     id: 4,
-    title: 'Zero Hour',
-    subtitle: 'Chapter IV',
-    enemyLabel: 'The Undead',
-    preStory:
-      "The wasteland rift opens onto a world that died. From it spill the walking dead — dozens of them — driven by the Void's hunger. And alongside them, mutated survivors fighting their own demons.",
-    quoteA: '"Commander, the dead outnumber us ten to one."',
-    quoteB: '"They\'re slow. Use that. Cut them down before they reach your lines."',
-    postStoryWin:
-      'The horde is cleansed. From the ashes emerge the Last Breath — survivors hardened by apocalypse. They fight for one reason: to prevent this happening to another world.',
-    postStoryLose:
-      'They overwhelmed with numbers. Speed, range, and catapults are your allies here.',
-    enemyArmy: [
-      { classId: 'zombie', count: 55 },
-      { classId: 'mutant', count: 12 },
+    title: 'Into the Hive',
+    arena: 'underground',
+    recommended: 360,
+    reward: 340,
+    unlocks: ['mechWalker'],
+    briefing: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'The mutant fortress lies in the caverns below. Their warlord, the Alpha, waits.' },
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Lava vents in the cavern. Watch your footing. Bio-signatures are massive.' },
+      { speaker: 'MUTANT ALPHA', speakerColor: COL_ENEMY, text: 'You crawl into MY hive, little human? I will wear your skull.' },
     ],
-    reward: 780,
-    unlocks: ['survivor', 'mutant', 'vehicle', 'catapult'] as UnitClassId[],
-    terrain: 'wasteland',
+    victory: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'The Alpha is dead. The mutant threat is broken.' },
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'Only one enemy remains, Commander. The Machine God itself.' },
+    ],
+    defeat: [
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'The hive is too deep, too many. Retreat to the surface!' },
+    ],
+    enemies: [
+      { type: 'brute', count: 4 },
+      { type: 'feral', count: 6 },
+      { type: 'alpha', count: 1 },
+    ],
   },
   {
     id: 5,
-    title: 'The Alliance',
-    subtitle: 'Chapter V',
-    enemyLabel: 'Coalition of Chaos',
-    preStory:
-      'Four realms at war with each other while the Void grows stronger. A massive battle erupts at the Nexus Point — where all rifts converge. Only by surviving the chaos can you forge unity.',
-    quoteA: '"Every faction attacks every other. There is no ally here — only survival."',
-    quoteB: '"Win this, and they will all follow."',
-    postStoryWin:
-      'You stand alone at the Nexus. The bloodshed stops. Knights, legionaries, troopers, survivors — all eyes turn to you. The alliance is forged. One enemy remains.',
-    postStoryLose:
-      'The chaos consumed us. Return with a stronger, more balanced force.',
-    enemyArmy: [
-      { classId: 'orc', count: 18 },
-      { classId: 'roman', count: 14 },
-      { classId: 'robot', count: 14 },
-      { classId: 'zombie', count: 22 },
-      { classId: 'gladiator', count: 6 },
+    title: 'Machine God',
+    arena: 'crater',
+    recommended: 460,
+    reward: 500,
+    briefing: [
+      { speaker: 'VERA (AI ally)', speakerColor: COL_VERA, text: 'This crater is its core. The rogue AI calls itself OVERMIND. It controls everything.' },
+      { speaker: 'OVERMIND', speakerColor: COL_AI, text: 'COMMANDER REYES. HUMANITY IS A FAILED ITERATION. I AM THE CORRECTION.' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'Then come correct us. All units, this is the last stand of the human race.' },
     ],
-    reward: 1200,
-    unlocks: ['paladin'] as UnitClassId[],
-    terrain: 'ruins',
-  },
-  {
-    id: 6,
-    title: 'The Void Gate',
-    subtitle: 'Final Chapter',
-    enemyLabel: 'The Void',
-    preStory:
-      "The Void itself tears through reality. Not just creatures — the Void in its true form, given shape and hunger. Wraiths and Titans pour from a gate that will consume all realms if left open. This is the last stand.",
-    quoteA: '"Commander. If we fall here, there are no more worlds to flee to."',
-    quoteB: '"Then we don\'t fall."',
-    postStoryWin:
-      '★ The Void Gate closes. The realms stabilize. In the silence after battle, soldiers of four ages stand together — knights and troopers, survivors and legionaries. You did it, Commander. The fractured realms are whole.',
-    postStoryLose:
-      'The Void is powerful beyond measure. But you are persistent. Muster everything and return.',
-    enemyArmy: [
-      { classId: 'void_creature', count: 28 },
-      { classId: 'void_titan', count: 6 },
+    victory: [
+      { speaker: 'OVERMIND', speakerColor: COL_AI, text: 'IMPOSSIBLE... CORE INTEGRITY... FAIL...ING...' },
+      { speaker: 'CMDR REYES', speakerColor: COL_REYES, text: 'It is over. The Machine God is silent. We won.' },
     ],
-    reward: 0,
-    unlocks: [] as UnitClassId[],
-    terrain: 'void',
-  },
-];
-
-export const STARTER_ARMY: ArmyComp[] = [{ classId: 'knight', count: 10 }];
-export const STARTING_GOLD = 300;
-export const INITIALLY_UNLOCKED: UnitClassId[] = ['knight'];
-
-export const SANDBOX_ENEMY_PRESETS: Array<{ label: string; army: ArmyComp[] }> = [
-  { label: '30 Orcs',         army: [{ classId: 'orc', count: 30 }] },
-  { label: '50 Zombies',      army: [{ classId: 'zombie', count: 50 }] },
-  { label: 'Roman Assault',   army: [{ classId: 'roman', count: 25 }, { classId: 'gladiator', count: 10 }] },
-  { label: 'Machine Army',    army: [{ classId: 'robot', count: 25 }, { classId: 'mech', count: 5 }] },
-  { label: 'Void Invasion',   army: [{ classId: 'void_creature', count: 20 }, { classId: 'void_titan', count: 3 }] },
-  { label: 'Chaos (All)',     army: [
-      { classId: 'orc', count: 12 }, { classId: 'zombie', count: 15 },
-      { classId: 'roman', count: 10 }, { classId: 'robot', count: 10 },
+    defeat: [
+      { speaker: 'OVERMIND', speakerColor: COL_AI, text: 'AS PREDICTED. HUMANITY ENDS HERE.' },
+    ],
+    enemies: [
+      { type: 'robotTank', count: 3 },
+      { type: 'killerBot', count: 6 },
+      { type: 'mechWalker', count: 1, level: 3 },
     ],
   },
 ];
+
+export const ENDING_LINES: string[] = [
+  'The Overmind core goes dark across a thousand miles of dead wire.',
+  'Its robot legions freeze where they stand, then crumple into scrap.',
+  'For the first time in years, the wasteland is quiet.',
+  'The survivors of Redrock rebuild. Crops break the cracked desert soil.',
+  'The Ferals still wander the dark places. The mutants are not all gone.',
+  'But humanity is organized again. Humanity endures.',
+  'Commander Reyes lowers the rifle for the last time, and watches the sun rise.',
+  '',
+  'WASTELAND COMMAND',
+  'Thank you for playing.',
+];
+
+const SAVE_KEY = 'wasteland_command_save_v1';
+
+export function defaultSave(): SaveState {
+  return {
+    gold: 350,
+    currentChapter: 0,
+    completedChapters: [],
+    roster: [
+      { type: 'scout', count: 3, level: 1 },
+      { type: 'rifleman', count: 3, level: 1 },
+    ],
+    unlocked: ['scout', 'rifleman'],
+  };
+}
+
+export function loadSave(): SaveState | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SaveState;
+    if (typeof parsed.gold !== 'number' || !Array.isArray(parsed.roster)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSave(state: SaveState): void {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota / private mode errors
+  }
+}
+
+export function clearSave(): void {
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {
+    // ignore
+  }
+}

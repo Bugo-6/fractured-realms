@@ -1,135 +1,303 @@
-import { UnitClassId, UnitDef } from './types';
+import type { UnitDef, UnitTypeId, FactionId } from './types';
 
-export const UNIT_DEFS: Record<UnitClassId, UnitDef> = {
-  // ── FANTASY ──────────────────────────────────────────────────────────────
-  knight: {
-    id: 'knight', name: 'Knight', faction: 'Kingdom of Aldor',
-    hp: 120, damage: 15, speed: 1.4, range: 36, attackCooldown: 800,
-    cost: 20, color: '#60a5fa', letter: 'K', isRanged: false, radius: 10,
-    description: 'Armored warrior. Tough and reliable.',
-  },
-  archer: {
-    id: 'archer', name: 'Archer', faction: 'Kingdom of Aldor',
-    hp: 60, damage: 22, speed: 1.3, range: 190, attackCooldown: 1200,
-    cost: 18, color: '#4ade80', letter: 'A', isRanged: true, radius: 8,
-    description: 'Swift ranged attacker. Deadly at distance.',
-  },
-  mage: {
-    id: 'mage', name: 'Arcane Mage', faction: 'Kingdom of Aldor',
-    hp: 50, damage: 58, speed: 1.0, range: 230, attackCooldown: 2100,
-    cost: 42, color: '#a78bfa', letter: 'M', isRanged: true, radius: 8,
-    description: 'High damage spellcaster. Glass cannon.',
-  },
-  paladin: {
-    id: 'paladin', name: 'Paladin', faction: 'Kingdom of Aldor',
-    hp: 240, damage: 22, speed: 1.1, range: 36, attackCooldown: 1000,
-    cost: 58, color: '#fbbf24', letter: 'P', isRanged: false, radius: 12,
-    description: 'Holy champion. Immense health pool.',
-  },
+// Range values from the design doc are in a 0-350 "pixel" scale.
+// World units are scaled down: 1 world unit ~= 10 design pixels.
+const R = 0.1; // range scale factor
 
-  // ── HISTORICAL ───────────────────────────────────────────────────────────
-  roman: {
-    id: 'roman', name: 'Legionary', faction: 'Iron Legion',
-    hp: 90, damage: 12, speed: 1.3, range: 33, attackCooldown: 700,
-    cost: 18, color: '#f97316', letter: 'R', isRanged: false, radius: 9,
-    description: 'Disciplined soldier. Strength in numbers.',
+export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
+  // ---- Survivor Corps (green) ----
+  scout: {
+    id: 'scout',
+    name: 'Scout',
+    faction: 'survivor',
+    color: 0x4ade80,
+    hp: 70,
+    dmg: 14,
+    spd: 2.0,
+    range: 140 * R,
+    cost: 12,
+    attackKind: 'ranged',
+    attackCooldown: 0.7,
+    description: 'Fast, lightly armed recon trooper with a pistol.',
   },
-  gladiator: {
-    id: 'gladiator', name: 'Gladiator', faction: 'Iron Legion',
-    hp: 130, damage: 28, speed: 1.9, range: 36, attackCooldown: 900,
-    cost: 35, color: '#ef4444', letter: 'G', isRanged: false, radius: 10,
-    description: 'Arena champion. Fast and fierce.',
+  rifleman: {
+    id: 'rifleman',
+    name: 'Rifleman',
+    faction: 'survivor',
+    color: 0x4ade80,
+    hp: 90,
+    dmg: 20,
+    spd: 1.5,
+    range: 150 * R,
+    cost: 20,
+    attackKind: 'ranged',
+    attackCooldown: 0.9,
+    description: 'Standard infantry. Reliable assault rifle.',
   },
-  catapult: {
-    id: 'catapult', name: 'Catapult', faction: 'Iron Legion',
-    hp: 70, damage: 130, speed: 0.4, range: 460, attackCooldown: 3200,
-    cost: 80, color: '#78716c', letter: 'C', isRanged: true, radius: 13,
-    description: 'Siege weapon. Devastating range, very slow reload.',
+  heavy: {
+    id: 'heavy',
+    name: 'Heavy Gunner',
+    faction: 'survivor',
+    color: 0x4ade80,
+    hp: 160,
+    dmg: 45,
+    spd: 0.8,
+    range: 120 * R,
+    cost: 55,
+    attackKind: 'ranged',
+    attackCooldown: 1.3,
+    description: 'Slow but devastating minigun operator.',
   },
-
-  // ── SCI-FI ───────────────────────────────────────────────────────────────
-  soldier: {
-    id: 'soldier', name: 'Assault Trooper', faction: 'Void Reapers',
-    hp: 80, damage: 20, speed: 1.5, range: 150, attackCooldown: 600,
-    cost: 25, color: '#06b6d4', letter: 'S', isRanged: true, radius: 9,
-    description: 'Reliable infantry with rifles.',
-  },
-  mech: {
-    id: 'mech', name: 'War Mech', faction: 'Void Reapers',
-    hp: 360, damage: 38, speed: 0.9, range: 130, attackCooldown: 850,
-    cost: 95, color: '#0891b2', letter: 'X', isRanged: true, radius: 14,
-    description: 'Armored combat mech. Slow but devastating.',
-  },
-  drone: {
-    id: 'drone', name: 'Attack Drone', faction: 'Void Reapers',
-    hp: 35, damage: 28, speed: 2.9, range: 165, attackCooldown: 700,
-    cost: 38, color: '#22d3ee', letter: 'D', isRanged: true, radius: 7,
-    description: 'Ultra-fast aerial unit. Fragile but swift.',
+  medic: {
+    id: 'medic',
+    name: 'Medic',
+    faction: 'survivor',
+    color: 0x4ade80,
+    hp: 70,
+    dmg: 10,
+    spd: 1.4,
+    range: 100 * R,
+    cost: 30,
+    attackKind: 'heal',
+    attackCooldown: 1.0,
+    description: 'Heals nearby wounded allies over time.',
   },
 
-  // ── APOCALYPTIC ──────────────────────────────────────────────────────────
-  survivor: {
-    id: 'survivor', name: 'Survivor', faction: 'Last Breath',
-    hp: 70, damage: 14, speed: 1.5, range: 140, attackCooldown: 900,
-    cost: 12, color: '#84cc16', letter: 'V', isRanged: true, radius: 8,
-    description: 'Battle-hardened survivor. Cheap and effective.',
+  // ---- Militia (orange) ----
+  biker: {
+    id: 'biker',
+    name: 'Biker',
+    faction: 'militia',
+    color: 0xf97316,
+    hp: 80,
+    dmg: 30,
+    spd: 2.8,
+    range: 25 * R,
+    cost: 25,
+    attackKind: 'melee',
+    attackCooldown: 0.6,
+    description: 'Fast melee berserker with a brutal chain weapon.',
   },
-  mutant: {
-    id: 'mutant', name: 'Mutant Brute', faction: 'Last Breath',
-    hp: 185, damage: 22, speed: 1.3, range: 33, attackCooldown: 1100,
-    cost: 20, color: '#65a30d', letter: 'U', isRanged: false, radius: 11,
-    description: 'Mutated brawler. Strong and resilient.',
+  bomber: {
+    id: 'bomber',
+    name: 'Bomber',
+    faction: 'militia',
+    color: 0xf97316,
+    hp: 100,
+    dmg: 80,
+    spd: 1.2,
+    range: 60 * R,
+    cost: 65,
+    attackKind: 'explosive',
+    attackCooldown: 1.8,
+    description: 'Lobs explosives dealing splash area damage.',
   },
-  vehicle: {
-    id: 'vehicle', name: 'Armored Vehicle', faction: 'Last Breath',
-    hp: 480, damage: 48, speed: 1.0, range: 160, attackCooldown: 1300,
-    cost: 115, color: '#4d7c0f', letter: 'T', isRanged: true, radius: 15,
-    description: 'Mobile fortress. Immense durability.',
+  sniper: {
+    id: 'sniper',
+    name: 'Sniper',
+    faction: 'militia',
+    color: 0xf97316,
+    hp: 60,
+    dmg: 55,
+    spd: 1.1,
+    range: 350 * R,
+    cost: 48,
+    attackKind: 'ranged',
+    attackCooldown: 2.0,
+    description: 'Extreme range marksman. Devastating but fragile.',
   },
 
-  // ── ENEMY-ONLY ───────────────────────────────────────────────────────────
-  orc: {
-    id: 'orc', name: 'Orc Warrior', faction: 'Orc Horde',
-    hp: 80, damage: 13, speed: 1.5, range: 33, attackCooldown: 850,
-    cost: 0, color: '#16a34a', letter: 'O', isRanged: false, radius: 10,
-    description: '',
+  // ---- Tech Division (cyan) ----
+  combatBot: {
+    id: 'combatBot',
+    name: 'Combat Bot',
+    faction: 'tech',
+    color: 0x06b6d4,
+    hp: 200,
+    dmg: 25,
+    spd: 1.0,
+    range: 130 * R,
+    cost: 70,
+    attackKind: 'ranged',
+    attackCooldown: 0.8,
+    description: 'Durable autonomous combat robot.',
   },
+  warDrone: {
+    id: 'warDrone',
+    name: 'War Drone',
+    faction: 'tech',
+    color: 0x06b6d4,
+    hp: 45,
+    dmg: 32,
+    spd: 3.0,
+    range: 160 * R,
+    cost: 40,
+    attackKind: 'ranged',
+    attackCooldown: 0.6,
+    flying: true,
+    description: 'Ultra fast flying gunship drone.',
+  },
+  mechWalker: {
+    id: 'mechWalker',
+    name: 'Mech Walker',
+    faction: 'tech',
+    color: 0x06b6d4,
+    hp: 500,
+    dmg: 60,
+    spd: 0.7,
+    range: 150 * R,
+    cost: 120,
+    attackKind: 'ranged',
+    attackCooldown: 1.1,
+    scale: 1.6,
+    description: 'Boss-tier walker. The pride of the Tech Division.',
+  },
+
+  // ---- Enemy only ----
   zombie: {
-    id: 'zombie', name: 'Zombie', faction: 'Undead',
-    hp: 60, damage: 8, speed: 0.7, range: 28, attackCooldown: 1500,
-    cost: 0, color: '#6b7280', letter: 'Z', isRanged: false, radius: 9,
-    description: '',
+    id: 'zombie',
+    name: 'Zombie',
+    faction: 'enemy',
+    color: 0x6b7d5a,
+    hp: 50,
+    dmg: 8,
+    spd: 0.8,
+    range: 20 * R,
+    cost: 0,
+    attackKind: 'melee',
+    attackCooldown: 1.2,
+    description: 'Slow shambling Feral. Dangerous in swarms.',
   },
-  robot: {
-    id: 'robot', name: 'Hunter-Killer', faction: 'Machine Swarm',
-    hp: 100, damage: 18, speed: 1.3, range: 110, attackCooldown: 700,
-    cost: 0, color: '#475569', letter: 'B', isRanged: true, radius: 9,
-    description: '',
+  feral: {
+    id: 'feral',
+    name: 'Feral',
+    faction: 'enemy',
+    color: 0x4a3d2f,
+    hp: 40,
+    dmg: 15,
+    spd: 2.2,
+    range: 20 * R,
+    cost: 0,
+    attackKind: 'melee',
+    attackCooldown: 0.7,
+    description: 'Fast, hunched mutant predator.',
   },
-  void_creature: {
-    id: 'void_creature', name: 'Void Wraith', faction: 'The Void',
-    hp: 160, damage: 26, speed: 1.7, range: 42, attackCooldown: 600,
-    cost: 0, color: '#7c3aed', letter: 'W', isRanged: false, radius: 10,
-    description: '',
+  brute: {
+    id: 'brute',
+    name: 'Mutant Brute',
+    faction: 'enemy',
+    color: 0x7c3aed,
+    hp: 200,
+    dmg: 35,
+    spd: 1.2,
+    range: 30 * R,
+    cost: 0,
+    attackKind: 'melee',
+    attackCooldown: 1.1,
+    scale: 1.2,
+    description: 'Hulking mutant tank with oversized arms.',
   },
-  void_titan: {
-    id: 'void_titan', name: 'Void Titan', faction: 'The Void',
-    hp: 900, damage: 65, speed: 0.8, range: 65, attackCooldown: 1000,
-    cost: 0, color: '#4c1d95', letter: '!', isRanged: false, radius: 18,
-    description: '',
+  alpha: {
+    id: 'alpha',
+    name: 'Mutant Alpha',
+    faction: 'enemy',
+    color: 0x9333ea,
+    hp: 800,
+    dmg: 60,
+    spd: 1.0,
+    range: 40 * R,
+    cost: 0,
+    attackKind: 'melee',
+    attackCooldown: 1.0,
+    scale: 1.8,
+    description: 'The mutant warlord. A living fortress.',
+  },
+  killerBot: {
+    id: 'killerBot',
+    name: 'Killer Bot',
+    faction: 'enemy',
+    color: 0xd1d5db,
+    hp: 120,
+    dmg: 22,
+    spd: 1.4,
+    range: 140 * R,
+    cost: 0,
+    attackKind: 'ranged',
+    attackCooldown: 0.7,
+    description: 'Precision military robot with a red optic.',
+  },
+  robotTank: {
+    id: 'robotTank',
+    name: 'Robot Tank',
+    faction: 'enemy',
+    color: 0x9ca3af,
+    hp: 400,
+    dmg: 50,
+    spd: 0.6,
+    range: 120 * R,
+    cost: 0,
+    attackKind: 'ranged',
+    attackCooldown: 1.4,
+    scale: 1.3,
+    description: 'Heavily armored treaded war machine.',
   },
 };
 
-export const PLAYABLE_UNITS: UnitClassId[] = [
-  'knight', 'archer', 'mage', 'paladin',
-  'roman', 'gladiator', 'catapult',
-  'soldier', 'mech', 'drone',
-  'survivor', 'mutant', 'vehicle',
+export const FACTION_NAMES: Record<FactionId, string> = {
+  survivor: 'Survivor Corps',
+  militia: 'Militia',
+  tech: 'Tech Division',
+  enemy: 'The Wasteland',
+};
+
+export const FACTION_COLORS: Record<FactionId, number> = {
+  survivor: 0x4ade80,
+  militia: 0xf97316,
+  tech: 0x06b6d4,
+  enemy: 0xb91c1c,
+};
+
+// Convert a hex number to a css color string
+export function hexToCss(hex: number): string {
+  return '#' + hex.toString(16).padStart(6, '0');
+}
+
+// Apply level scaling to base stats. Level 1 = base, 2 = +30% HP +20% DMG,
+// 3 = +70% HP +50% DMG.
+export function leveledStats(def: UnitDef, level: number): { hp: number; dmg: number } {
+  let hpMul = 1;
+  let dmgMul = 1;
+  if (level === 2) {
+    hpMul = 1.3;
+    dmgMul = 1.2;
+  } else if (level >= 3) {
+    hpMul = 1.7;
+    dmgMul = 1.5;
+  }
+  return {
+    hp: Math.round(def.hp * hpMul),
+    dmg: Math.round(def.dmg * dmgMul),
+  };
+}
+
+export const ALL_PLAYABLE: UnitTypeId[] = [
+  'scout',
+  'rifleman',
+  'heavy',
+  'medic',
+  'biker',
+  'bomber',
+  'sniper',
+  'combatBot',
+  'warDrone',
+  'mechWalker',
 ];
 
-export const FACTION_COLORS: Record<string, string> = {
-  'Kingdom of Aldor': '#60a5fa',
-  'Iron Legion':      '#f97316',
-  'Void Reapers':     '#06b6d4',
-  'Last Breath':      '#84cc16',
-};
+export const ALL_ENEMIES: UnitTypeId[] = [
+  'zombie',
+  'feral',
+  'brute',
+  'alpha',
+  'killerBot',
+  'robotTank',
+];

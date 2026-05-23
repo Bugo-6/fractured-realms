@@ -1,129 +1,155 @@
 import React, { useEffect, useRef } from 'react';
 
-interface Props {
-  onNewGame: () => void;
+interface MainMenuProps {
+  hasSave: boolean;
+  onStartCampaign: () => void;
   onContinue: () => void;
   onSandbox: () => void;
-  hasSave: boolean;
 }
 
-export function MainMenu({ onNewGame, onContinue, onSandbox, hasSave }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
+// Animated ember particles drawn on a full-screen canvas.
+function useEmbers(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = canvas.width, H = canvas.height;
-    const particles: Array<{ x: number; y: number; vx: number; vy: number; life: number; r: number; color: string }> = [];
+    let raf = 0;
+    const resize = () => {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
 
-    for (let i = 0; i < 80; i++) {
-      particles.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: -0.2 - Math.random() * 0.5,
-        life: Math.random(),
-        r: 1 + Math.random() * 2,
-        color: ['#60a5fa', '#a78bfa', '#f97316', '#06b6d4'][Math.floor(Math.random() * 4)],
-      });
+    interface Ember {
+      x: number;
+      y: number;
+      vy: number;
+      vx: number;
+      r: number;
+      life: number;
+      max: number;
+    }
+    const embers: Ember[] = [];
+    const spawn = (): Ember => ({
+      x: Math.random() * canvas.width,
+      y: canvas.height + 10,
+      vy: -(0.3 + Math.random() * 0.9),
+      vx: (Math.random() - 0.5) * 0.4,
+      r: 0.8 + Math.random() * 2.2,
+      life: 0,
+      max: 200 + Math.random() * 250,
+    });
+    for (let i = 0; i < 90; i++) {
+      const e = spawn();
+      e.y = Math.random() * canvas.height;
+      e.life = Math.random() * e.max;
+      embers.push(e);
     }
 
-    let rafId: number;
-    function draw() {
-      ctx!.fillStyle = '#04000a';
-      ctx!.fillRect(0, 0, W, H);
-
-      for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life += 0.004;
-        if (p.y < 0 || p.life > 1) {
-          p.x = Math.random() * W;
-          p.y = H + 5;
-          p.life = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const e of embers) {
+        e.x += e.vx;
+        e.y += e.vy;
+        e.life += 1;
+        const t = e.life / e.max;
+        const alpha = Math.max(0, 1 - t) * 0.8;
+        const hue = 18 + Math.random() * 14;
+        ctx.beginPath();
+        ctx.fillStyle = `hsla(${hue}, 90%, 55%, ${alpha})`;
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+        ctx.fill();
+        if (e.life >= e.max || e.y < -10) {
+          Object.assign(e, spawn());
         }
-        ctx!.globalAlpha = Math.sin(p.life * Math.PI) * 0.7;
-        ctx!.fillStyle = p.color;
-        ctx!.beginPath();
-        ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx!.fill();
       }
-      ctx!.globalAlpha = 1;
-      rafId = requestAnimationFrame(draw);
-    }
-    rafId = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
+  }, [canvasRef]);
+}
+
+export const MainMenu: React.FC<MainMenuProps> = ({
+  hasSave,
+  onStartCampaign,
+  onContinue,
+  onSandbox,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEmbers(canvasRef);
 
   return (
-    <div className="relative min-h-screen bg-[#04000a] flex flex-col items-center justify-center overflow-hidden">
-      <canvas ref={canvasRef} width={1200} height={800} className="absolute inset-0 w-full h-full object-cover" />
+    <div className="relative h-full w-full overflow-hidden bg-gradient-to-b from-[#1a0a05] via-[#0d0503] to-black">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <div
+        className="absolute inset-0 opacity-30"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 80%, rgba(255,90,0,0.35), transparent 55%)',
+        }}
+      />
+      <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 text-center">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.5em] text-orange-300/70">
+          2041 &middot; The Wasteland
+        </p>
+        <h1 className="select-none text-5xl font-black uppercase leading-none tracking-tight sm:text-7xl md:text-8xl">
+          <span className="bg-gradient-to-b from-orange-300 via-red-500 to-red-800 bg-clip-text text-transparent drop-shadow-[0_2px_12px_rgba(255,60,0,0.5)]">
+            Wasteland
+          </span>
+          <br />
+          <span className="bg-gradient-to-b from-amber-200 via-orange-500 to-red-700 bg-clip-text text-transparent drop-shadow-[0_2px_12px_rgba(255,60,0,0.5)]">
+            Command
+          </span>
+        </h1>
+        <p className="mt-5 max-w-md text-sm text-gray-400">
+          Lead the last organized survivors of humanity against the dead, the
+          mutants, and the machines.
+        </p>
 
-      <div className="relative z-10 flex flex-col items-center gap-10 px-6 text-center">
-        {/* Title */}
-        <div>
-          <p className="text-sm font-mono tracking-[0.4em] text-purple-400 mb-2 uppercase">A Battle Simulator</p>
-          <h1
-            className="font-black uppercase leading-none"
-            style={{
-              fontSize: 'clamp(3rem,9vw,8rem)',
-              background: 'linear-gradient(135deg, #60a5fa 0%, #a78bfa 40%, #f97316 80%, #22d3ee 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              textShadow: 'none',
-            }}
-          >
-            Fractured
-            <br />
-            Realms
-          </h1>
-          <p className="mt-4 text-gray-400 font-mono text-sm max-w-md">
-            Four factions. One Void. An epic struggle across shattered dimensions.
-          </p>
+        <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
+          <MenuButton primary onClick={onStartCampaign}>
+            Start Campaign
+          </MenuButton>
+          <MenuButton onClick={onContinue} disabled={!hasSave}>
+            Continue
+          </MenuButton>
+          <MenuButton onClick={onSandbox}>Sandbox</MenuButton>
         </div>
 
-        {/* Buttons */}
-        <div className="flex flex-col gap-3 w-full max-w-xs">
-          {hasSave && (
-            <button
-              onClick={onContinue}
-              className="px-8 py-3 rounded-lg font-bold font-mono uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-500 border border-blue-400 transition-all hover:scale-105"
-            >
-              Continue Campaign
-            </button>
-          )}
-          <button
-            onClick={onNewGame}
-            className="px-8 py-3 rounded-lg font-bold font-mono uppercase tracking-wider text-black bg-amber-400 hover:bg-amber-300 border border-amber-300 transition-all hover:scale-105"
-          >
-            {hasSave ? 'New Game' : 'Start Campaign'}
-          </button>
-          <button
-            onClick={onSandbox}
-            className="px-8 py-3 rounded-lg font-bold font-mono uppercase tracking-wider text-gray-200 bg-white/10 hover:bg-white/20 border border-white/20 transition-all hover:scale-105"
-          >
-            Sandbox Mode
-          </button>
-        </div>
-
-        {/* Faction preview */}
-        <div className="flex gap-6 mt-2">
-          {[
-            { name: 'Kingdom of Aldor', color: '#60a5fa' },
-            { name: 'Iron Legion',      color: '#f97316' },
-            { name: 'Void Reapers',     color: '#06b6d4' },
-            { name: 'Last Breath',      color: '#84cc16' },
-          ].map(f => (
-            <div key={f.name} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: f.color }} />
-              <span className="text-xs font-mono text-gray-400">{f.name}</span>
-            </div>
-          ))}
-        </div>
+        <p className="mt-10 text-[10px] uppercase tracking-widest text-gray-600">
+          Built with React + Three.js
+        </p>
       </div>
     </div>
   );
-}
+};
+
+const MenuButton: React.FC<{
+  children: React.ReactNode;
+  onClick: () => void;
+  primary?: boolean;
+  disabled?: boolean;
+}> = ({ children, onClick, primary, disabled }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={[
+      'rounded-md px-6 py-3 text-sm font-bold uppercase tracking-widest transition-all',
+      disabled
+        ? 'cursor-not-allowed border border-white/10 bg-white/5 text-gray-600'
+        : primary
+          ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg shadow-red-900/40 hover:from-orange-500 hover:to-red-500'
+          : 'border border-orange-500/40 bg-black/40 text-orange-200 hover:border-orange-400 hover:bg-orange-950/40',
+    ].join(' ')}
+  >
+    {children}
+  </button>
+);

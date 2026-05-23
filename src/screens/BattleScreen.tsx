@@ -1,93 +1,91 @@
-import React, { useState, useCallback } from 'react';
-import { ArmyComp } from '../game/types';
-import { BattleCanvas } from '../components/BattleCanvas';
+import React, { useState } from 'react';
+import type { BattleConfig } from '../game/types';
+import { BattleScene } from '../components/BattleScene';
 
-interface Props {
-  playerArmy: ArmyComp[];
-  enemyArmy: ArmyComp[];
-  chapterTitle: string;
-  terrain: string;
-  onEnd: (result: 'victory' | 'defeat') => void;
+interface BattleScreenProps {
+  config: BattleConfig;
+  title: string;
+  onEnd: (winner: 'player' | 'enemy') => void;
 }
 
-const SPEEDS = [1, 2, 4, 8];
-
-export function BattleScreen({ playerArmy, enemyArmy, chapterTitle, terrain, onEnd }: Props) {
-  const [teamCount, setTeamCount] = useState<[number, number]>([
-    playerArmy.reduce((s, a) => s + a.count, 0),
-    enemyArmy.reduce((s, a) => s + a.count, 0),
-  ]);
+export const BattleScreen: React.FC<BattleScreenProps> = ({
+  config,
+  title,
+  onEnd,
+}) => {
   const [paused, setPaused] = useState(false);
-  const [speedIdx, setSpeedIdx] = useState(0);
-  const speed = SPEEDS[speedIdx];
+  const [speed, setSpeed] = useState(1);
 
-  const handleUpdate = useCallback((tc: [number, number]) => setTeamCount(tc), []);
+  const totalPlayer = config.playerArmy.length;
+  const totalEnemy = config.enemyArmy.length;
 
   return (
-    <div className="min-h-screen bg-[#07050f] text-white flex flex-col">
-      {/* HUD bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 flex-shrink-0">
-        {/* Player count */}
-        <div className="flex items-center gap-2 min-w-28">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
-          <span className="font-mono text-sm text-gray-300">YOUR FORCES</span>
-          <span className="font-mono font-bold text-blue-400 text-lg ml-1">{teamCount[0]}</span>
+    <div className="relative h-full w-full overflow-hidden bg-black">
+      <BattleScene
+        config={config}
+        paused={paused}
+        speed={speed}
+        onFinished={onEnd}
+      />
+
+      {/* Top HUD */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 bg-gradient-to-b from-black/80 to-transparent px-4 py-3">
+        <div className="flex items-center gap-2 rounded-md bg-green-950/60 px-3 py-1.5 ring-1 ring-green-700/50">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-green-400">
+            Your Forces
+          </span>
+          <span className="text-lg font-black text-green-300">{totalPlayer}</span>
         </div>
 
-        {/* Chapter title + controls */}
-        <div className="flex flex-col items-center gap-1">
-          <span className="font-mono text-xs text-gray-500 uppercase tracking-widest">{chapterTitle}</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPaused(p => !p)}
-              className={`px-3 py-1 rounded font-mono text-xs border transition-colors
-                ${paused ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'}`}
-            >
-              {paused ? '▶ RESUME' : '⏸ PAUSE'}
-            </button>
-            <button
-              onClick={() => setSpeedIdx(i => (i + 1) % SPEEDS.length)}
-              className="px-3 py-1 rounded font-mono text-xs border border-white/20 bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
-            >
-              {speed}× SPEED
-            </button>
-          </div>
+        <div className="truncate text-center text-xs font-bold uppercase tracking-[0.3em] text-orange-200">
+          {title}
         </div>
 
-        {/* Enemy count */}
-        <div className="flex items-center gap-2 min-w-28 justify-end">
-          <span className="font-mono font-bold text-red-400 text-lg mr-1">{teamCount[1]}</span>
-          <span className="font-mono text-sm text-gray-300">ENEMY</span>
-          <div className="w-3 h-3 rounded-full bg-red-500" />
+        <div className="flex items-center gap-2 rounded-md bg-red-950/60 px-3 py-1.5 ring-1 ring-red-700/50">
+          <span className="text-lg font-black text-red-300">{totalEnemy}</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">
+            Hostiles
+          </span>
         </div>
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 p-4 flex items-center justify-center">
-        <div className="w-full max-w-7xl">
-          <BattleCanvas
-            playerArmy={playerArmy}
-            enemyArmy={enemyArmy}
-            terrain={terrain}
-            speedMultiplier={speed}
-            isPaused={paused}
-            onUpdate={handleUpdate}
-            onEnd={onEnd}
-          />
-        </div>
+      {/* Bottom controls */}
+      <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-4 py-4">
+        <button
+          onClick={() => setPaused((p) => !p)}
+          className="rounded-md border border-white/20 bg-black/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-gray-200 hover:bg-white/10"
+        >
+          {paused ? 'Resume' : 'Pause'}
+        </button>
+        {[1, 2, 4].map((s) => (
+          <button
+            key={s}
+            onClick={() => setSpeed(s)}
+            className={[
+              'rounded-md px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors',
+              speed === s
+                ? 'bg-orange-600 text-white'
+                : 'border border-white/20 bg-black/60 text-gray-300 hover:bg-white/10',
+            ].join(' ')}
+          >
+            {s}x
+          </button>
+        ))}
+        <button
+          onClick={() => onEnd('enemy')}
+          className="rounded-md border border-red-700/50 bg-red-950/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-red-300 hover:bg-red-900/60"
+        >
+          Retreat
+        </button>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center justify-center gap-6 pb-3 flex-wrap px-4">
-        <span className="text-xs font-mono text-gray-600">UNITS:</span>
-        <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Your forces (blue ring)
-        </span>
-        <span className="text-xs font-mono text-gray-500 flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Enemies (red ring)
-        </span>
-        <span className="text-xs font-mono text-gray-500">Letter = unit type · Color = faction</span>
-      </div>
+      {paused && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <span className="rounded-lg bg-black/60 px-8 py-4 text-2xl font-black uppercase tracking-[0.4em] text-white/80">
+            Paused
+          </span>
+        </div>
+      )}
     </div>
   );
-}
+};
