@@ -11,6 +11,21 @@ interface PreBattleProps {
   onLaunch: (army: { type: UnitTypeId; level: number }[]) => void;
 }
 
+// Short labels + colors for the hard-counter damage types.
+const DMG_BADGE: Record<string, { label: string; color: string }> = {
+  bullet: { label: 'BULLET', color: '#fbbf24' },
+  explosive: { label: 'EXPLO', color: '#f97316' },
+  energy: { label: 'ENERGY', color: '#22d3ee' },
+  melee: { label: 'MELEE', color: '#a3a3a3' },
+  heal: { label: 'HEAL', color: '#4ade80' },
+};
+
+const ARMOR_LABEL: Record<string, string> = {
+  flesh: 'Flesh',
+  armored: 'Armored',
+  heavy: 'Heavy',
+};
+
 const UNIT_ICON: Record<string, string> = {
   scout: '\u{1F575}',
   rifleman: '\u{1F52B}',
@@ -146,7 +161,7 @@ export const PreBattle: React.FC<PreBattleProps> = ({
               </button>
             ) : (
               <span className="text-xs italic text-gray-600">
-                Briefing complete. Build your army &rarr;
+                Briefing done. Choose your pool, then deploy with CP in battle &rarr;
               </span>
             )}
             <div className="ml-auto flex gap-1">
@@ -193,7 +208,7 @@ export const PreBattle: React.FC<PreBattleProps> = ({
       <div className="flex w-full flex-1 flex-col p-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-black uppercase tracking-widest text-green-300">
-            Deploy Forces
+            Deployment Pool
           </h3>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">
@@ -245,7 +260,21 @@ export const PreBattle: React.FC<PreBattleProps> = ({
                       </span>
                     </div>
                     <div className="text-[10px] text-gray-500">
-                      HP {stats.hp} &middot; DMG {stats.dmg} &middot; Owned {r.count}
+                      HP {stats.hp} &middot; DMG {stats.dmg} &middot; {def.cost} CP &middot; Owned {r.count}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span
+                        className="rounded px-1 text-[8px] font-black tracking-wider"
+                        style={{
+                          backgroundColor: (DMG_BADGE[def.damageType]?.color ?? '#888') + '33',
+                          color: DMG_BADGE[def.damageType]?.color ?? '#888',
+                        }}
+                      >
+                        {DMG_BADGE[def.damageType]?.label ?? def.damageType}
+                      </span>
+                      <span className="text-[8px] uppercase text-gray-600">
+                        {ARMOR_LABEL[def.armorType] ?? def.armorType} armor
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -330,7 +359,7 @@ export const PreBattle: React.FC<PreBattleProps> = ({
           disabled={totalDeployed === 0}
           className="mt-4 rounded-lg bg-gradient-to-r from-red-700 to-orange-600 py-3 text-sm font-black uppercase tracking-[0.3em] text-white shadow-lg shadow-red-900/40 enabled:hover:from-red-600 enabled:hover:to-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {totalDeployed === 0 ? 'Deploy at least one unit' : 'Engage'}
+          {totalDeployed === 0 ? 'Add at least one unit to your pool' : 'Engage'}
         </button>
       </div>
     </div>

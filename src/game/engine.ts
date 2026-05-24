@@ -7,6 +7,9 @@ import type {
   BattleUnit,
   Projectile,
   UnitTypeId,
+  DamageType,
+  ArmorType,
+  CollisionZone,
 } from './types';
 import { UNIT_DEFS, leveledStats } from './unitDefs';
 
@@ -26,9 +29,13 @@ function makeUnit(
   team: 'player' | 'enemy',
   x: number,
   z: number,
+  statScale = 1,
 ): BattleUnit {
   const def = UNIT_DEFS[type];
   const stats = leveledStats(def, level);
+  // Difficulty curve: enemies scale hp/dmg by the chapter statScale multiplier.
+  const hp = Math.round(stats.hp * statScale);
+  const dmg = Math.round(stats.dmg * statScale);
   return {
     id: nextId(),
     type,
@@ -36,15 +43,17 @@ function makeUnit(
     level,
     x,
     z,
-    hp: stats.hp,
-    maxHp: stats.hp,
-    dmg: stats.dmg,
+    hp,
+    maxHp: hp,
+    dmg,
     spd: def.spd,
     range: def.range,
     attackKind: def.attackKind,
     attackCooldown: def.attackCooldown,
     cooldownTimer: Math.random() * 0.4,
     facing: team === 'player' ? 0 : Math.PI,
+    damageType: def.damageType,
+    armorType: def.armorType,
     alive: true,
     dying: false,
     deathTimer: 0,
@@ -61,24 +70,50 @@ function makeUnit(
 function layoutArmy(
   army: { type: UnitTypeId; level: number }[],
   team: 'player' | 'enemy',
+  statScale = 1,
+  multiLane = false,
 ): BattleUnit[] {
   const units: BattleUnit[] = [];
   const baseX = team === 'player' ? -26 : 26;
   const dir = team === 'player' ? -1 : 1; // ranks march away from center
   const perCol = 6;
+
+  // Multi-lane flanking: split the enemy army into two groups that spawn from
+  // the top (+z) and bottom (-z) sides for a pincer attack.
+  if (multiLane && team === 'enemy') {
+    const half = Math.ceil(army.length / 2);
+    army.forEach((entry, i) => {
+      const inGroup = i < half ? i : i - half;
+      const flank = i < half ? -1 : 1; // group A from -z, group B from +z
+      const col = Math.floor(inGroup / perCol);
+      const row = inGroup % perCol;
+      const x = baseX + dir * col * 3.0;
+      const z = flank * 15 + (row - (perCol - 1) / 2) * 2.4 + (col % 2 ? 1.4 : 0);
+      units.push(makeUnit(entry.type, entry.level, team, x, z, statScale));
+    });
+    return units;
+  }
+
   army.forEach((entry, i) => {
     const col = Math.floor(i / perCol);
     const row = i % perCol;
     const x = baseX + dir * col * 3.2;
     const z = (row - (perCol - 1) / 2) * 3.6 + (col % 2 ? 1.8 : 0);
-    units.push(makeUnit(entry.type, entry.level, team, x, z));
+    units.push(makeUnit(entry.type, entry.level, team, x, z, statScale));
   });
   return units;
 }
 
 export function createBattle(config: BattleConfig): BattleState {
+  const enemyScale = config.statScale ?? 1;
+  // Player army deploys at full strength (no stat scaling). Enemies scale.
   const playerUnits = layoutArmy(config.playerArmy, 'player');
-  const enemyUnits = layoutArmy(config.enemyArmy, 'enemy');
+  const enemyUnits = layoutArmy(
+    config.enemyArmy,
+    'enemy',
+    enemyScale,
+    !!config.multiLane,
+  );
   const allUnits = [...playerUnits, ...enemyUnits];
 
   // Environmental hazard: open dunes reduce effective weapon range.
@@ -87,6 +122,13 @@ export function createBattle(config: BattleConfig): BattleState {
       u.range *= 0.65;
     }
   }
+
+  const startingCP = config.startingCP ?? 0;
+  const pool = config.pendingDeployments ?? [];
+  const hasDeployPool = pool.length > 0;
+  const minDeployCost = hasDeployPool
+    ? Math.min(...pool.map((p) => UNIT_DEFS[p.type].cost))
+    : Infinity;
 
   return {
     units: allUnits,
@@ -97,11 +139,43 @@ export function createBattle(config: BattleConfig): BattleState {
     winner: null,
     elapsed: 0,
     arena: config.arena,
+    collisionZones: config.collisionZones ?? [],
+    commandPoints: startingCP,
+    maxCP: Math.max(startingCP, config.startingCP ?? 0),
+    cpPerKill: config.cpPerKill ?? 12,
+    minDeployCost,
+    hasDeployPool,
     eruptionTimer: 8,
     eruptionX: 0,
     eruptionZ: 0,
     eruptionActive: false,
   };
+}
+
+// Deploy a single unit from the player's pool during battle, paying its CP cost.
+// Returns true if the unit was deployed, false if there were not enough CP.
+export function deployUnit(
+  state: BattleState,
+  type: UnitTypeId,
+  level: number,
+): boolean {
+  const def = UNIT_DEFS[type];
+  const cost = def.cost;
+  if (state.commandPoints < cost) return false;
+  // Spawn at a random position on the player side.
+  const x = -30 + Math.random() * 10; // -30 .. -20
+  const z = FIELD_MIN_Z + Math.random() * (FIELD_MAX_Z - FIELD_MIN_Z);
+  const unit = makeUnit(type, level, 'player', x, z);
+  if (state.arena === 'desertOpen') unit.range *= 0.65;
+  state.units.push(unit);
+  state.commandPoints -= cost;
+  // If the fight was already considered "over" because the player had no units,
+  // un-finish it so the freshly deployed unit can fight.
+  if (state.finished && state.winner === 'enemy') {
+    state.finished = false;
+    state.winner = null;
+  }
+  return true;
 }
 
 function dist2(a: BattleUnit, bx: number, bz: number): number {
@@ -110,19 +184,87 @@ function dist2(a: BattleUnit, bx: number, bz: number): number {
   return dx * dx + dz * dz;
 }
 
-function findTarget(unit: BattleUnit, units: BattleUnit[]): BattleUnit | null {
+type TargetStrategy = 'nearest' | 'weakest' | 'mostDangerous';
+
+function findTarget(
+  unit: BattleUnit,
+  units: BattleUnit[],
+  strategy: TargetStrategy = 'nearest',
+): BattleUnit | null {
+  const enemies = units.filter((u) => u.alive && !u.dying && u.team !== unit.team);
+  if (enemies.length === 0) return null;
+
+  if (strategy === 'weakest') {
+    // Target unit with lowest HP ratio (medics, snipers tend to die first).
+    return enemies.reduce((best, u) =>
+      u.hp / u.maxHp < best.hp / best.maxHp ? u : best,
+    );
+  }
+  if (strategy === 'mostDangerous') {
+    // Target unit with highest damage (snipers, heavy, mechs).
+    return enemies.reduce((best, u) => (u.dmg > best.dmg ? u : best));
+  }
+  // nearest (default)
   let best: BattleUnit | null = null;
   let bestD = Infinity;
-  for (const other of units) {
-    if (!other.alive || other.dying) continue;
-    if (other.team === unit.team) continue;
-    const d = dist2(unit, other.x, other.z);
+  for (const u of enemies) {
+    const dx = unit.x - u.x;
+    const dz = unit.z - u.z;
+    const d = dx * dx + dz * dz;
     if (d < bestD) {
       bestD = d;
-      best = other;
+      best = u;
     }
   }
   return best;
+}
+
+// Pick a unit's targeting strategy. Feral hunt the weakest (medics/snipers),
+// Alpha hunt the most dangerous (heavies/mechs); everyone else picks nearest.
+function strategyFor(type: UnitTypeId): TargetStrategy {
+  if (type === 'feral') return 'weakest';
+  if (type === 'alpha') return 'mostDangerous';
+  return 'nearest';
+}
+
+// Hard-counter damage multiplier: attacker damageType vs target armorType.
+function damageMultiplier(dmgType: DamageType, armorType: ArmorType): number {
+  if (dmgType === 'bullet') {
+    if (armorType === 'armored') return 0.25;
+    if (armorType === 'heavy') return 0.12;
+    return 1.0; // vs flesh
+  }
+  if (dmgType === 'explosive') {
+    if (armorType === 'heavy') return 1.0;
+    if (armorType === 'armored') return 1.0;
+    return 1.5; // extra vs flesh clusters
+  }
+  if (dmgType === 'energy') {
+    if (armorType === 'armored') return 1.8;
+    if (armorType === 'heavy') return 1.6;
+    return 1.0;
+  }
+  if (dmgType === 'melee') return 1.0;
+  return 1.0;
+}
+
+// Steer a candidate position out of any obstacle collision zone.
+function resolveCollisions(
+  nx: number,
+  nz: number,
+  zones: CollisionZone[] | undefined,
+): { x: number; z: number } {
+  if (!zones || zones.length === 0) return { x: nx, z: nz };
+  for (const zone of zones) {
+    const dx = nx - zone.x;
+    const dz = nz - zone.z;
+    const d = Math.hypot(dx, dz) || 0.0001;
+    if (d < zone.radius) {
+      const push = zone.radius / d;
+      return { x: zone.x + dx * push, z: zone.z + dz * push };
+    }
+  }
+  return { x: nx, z: nz };
 }
 
 // Heal target: find most-wounded friendly within range (excluding self).
@@ -152,13 +294,24 @@ function clampField(unit: BattleUnit): void {
   if (unit.z > FIELD_MAX_Z) unit.z = FIELD_MAX_Z;
 }
 
-function applyDamage(target: BattleUnit, amount: number): void {
-  target.hp -= amount;
+function applyDamage(
+  state: BattleState,
+  target: BattleUnit,
+  amount: number,
+  dmgType?: DamageType,
+): void {
+  const mult = dmgType ? damageMultiplier(dmgType, target.armorType) : 1.0;
+  target.hp -= amount * mult;
   target.hitFlash = 0.18;
   if (target.hp <= 0 && !target.dying) {
     target.hp = 0;
     target.dying = true;
     target.deathTimer = 0;
+    // Command Points: award CP when a player kills an enemy.
+    if (target.team === 'enemy') {
+      state.commandPoints += state.cpPerKill;
+      if (state.commandPoints > state.maxCP) state.maxCP = state.commandPoints;
+    }
   }
 }
 
@@ -204,8 +357,13 @@ export function stepBattle(state: BattleState, dt: number): void {
         unit.facing = Math.atan2(dx, dz);
         if (d > unit.range) {
           const step = unit.spd * dt;
-          unit.x += (dx / d) * step;
-          unit.z += (dz / d) * step;
+          const moved = resolveCollisions(
+            unit.x + (dx / d) * step,
+            unit.z + (dz / d) * step,
+            state.collisionZones,
+          );
+          unit.x = moved.x;
+          unit.z = moved.z;
         } else if (unit.cooldownTimer <= 0) {
           healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + unit.dmg * 2.2);
           unit.cooldownTimer = unit.attackCooldown;
@@ -224,7 +382,7 @@ export function stepBattle(state: BattleState, dt: number): void {
       if (t && t.alive && !t.dying && t.team !== unit.team) target = t;
     }
     if (!target) {
-      target = findTarget(unit, units);
+      target = findTarget(unit, units, strategyFor(unit.type));
       unit.targetId = target ? target.id : null;
     }
 
@@ -236,10 +394,15 @@ export function stepBattle(state: BattleState, dt: number): void {
     unit.facing = Math.atan2(dx, dz);
 
     if (d > unit.range) {
-      // move toward target
+      // move toward target, steering around obstacles
       const step = unit.spd * dt;
-      unit.x += (dx / d) * step;
-      unit.z += (dz / d) * step;
+      const moved = resolveCollisions(
+        unit.x + (dx / d) * step,
+        unit.z + (dz / d) * step,
+        state.collisionZones,
+      );
+      unit.x = moved.x;
+      unit.z = moved.z;
       clampField(unit);
     } else if (unit.cooldownTimer <= 0) {
       // attack
@@ -248,7 +411,7 @@ export function stepBattle(state: BattleState, dt: number): void {
       const def = UNIT_DEFS[unit.type];
 
       if (unit.attackKind === 'melee') {
-        applyDamage(target, unit.dmg);
+        applyDamage(state, target, unit.dmg, unit.damageType);
       } else if (unit.attackKind === 'explosive') {
         // splash damage around target
         spawnProjectile(state, unit, target, def.color, true);
@@ -280,9 +443,19 @@ export function stepBattle(state: BattleState, dt: number): void {
   state.playerAlive = pAlive;
   state.enemyAlive = eAlive;
 
-  if (!state.finished && (pAlive === 0 || eAlive === 0)) {
-    state.finished = true;
-    state.winner = eAlive === 0 ? 'player' : 'enemy';
+  // The player can still reinforce while they have a deployment pool and enough
+  // CP to field at least one more unit — an empty field is not yet a defeat.
+  const canReinforce =
+    state.hasDeployPool && state.commandPoints >= state.minDeployCost;
+
+  if (!state.finished) {
+    if (eAlive === 0) {
+      state.finished = true;
+      state.winner = 'player';
+    } else if (pAlive === 0 && !canReinforce) {
+      state.finished = true;
+      state.winner = 'enemy';
+    }
   }
 }
 
@@ -379,7 +552,7 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
               const dx = other.x - unit.x;
               const dz = other.z - unit.z;
               if (dx * dx + dz * dz > r2) continue;
-              applyDamage(other, unit.dmg * SUICIDE_DMG_MULT);
+              applyDamage(state, other, unit.dmg * SUICIDE_DMG_MULT, unit.damageType);
             }
             // Kill self
             unit.hp = 0;
@@ -453,7 +626,7 @@ function updateLavaEruption(state: BattleState, dt: number): void {
       const dx = u.x - ex;
       const dz = u.z - ez;
       if (dx * dx + dz * dz <= r2) {
-        applyDamage(u, ERUPTION_DAMAGE * dt);
+        applyDamage(state, u, ERUPTION_DAMAGE * dt);
       }
     }
     state.eruptionTimer -= dt;
@@ -499,14 +672,16 @@ function spawnProjectile(
   });
   // store the intended damage/target hint via a side table-free approach:
   // we resolve by proximity on update, using the firing unit's damage baked in.
-  (state.projectiles[state.projectiles.length - 1] as ProjectileWithDmg).dmg = from.dmg;
-  (state.projectiles[state.projectiles.length - 1] as ProjectileWithDmg).explosive =
-    explosive;
+  const last = state.projectiles[state.projectiles.length - 1] as ProjectileWithDmg;
+  last.dmg = from.dmg;
+  last.explosive = explosive;
+  last.dmgType = from.damageType;
 }
 
 interface ProjectileWithDmg extends Projectile {
   dmg: number;
   explosive: boolean;
+  dmgType: DamageType;
 }
 
 function updateProjectiles(
@@ -548,11 +723,11 @@ function updateProjectiles(
           const dd = Math.hypot(dx, dz);
           if (dd < 4.5) {
             const falloff = 1 - dd / 4.5;
-            applyDamage(u, p.dmg * falloff);
+            applyDamage(state, u, p.dmg * falloff, p.dmgType);
           }
         }
       } else {
-        applyDamage(hit, p.dmg);
+        applyDamage(state, hit, p.dmg, p.dmgType);
       }
       continue; // projectile consumed
     }

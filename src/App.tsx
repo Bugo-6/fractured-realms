@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import type { BattleConfig, RosterEntry, SaveState, UnitTypeId } from './game/types';
 import { CAMPAIGN } from './game/campaign';
 import { defaultSave, loadSave, writeSave } from './game/campaign';
+import { ARENA_COLLISION_ZONES } from './game/arenaBuilder';
 
 import { MainMenu } from './screens/MainMenu';
 import { CampaignMap } from './screens/CampaignMap';
@@ -83,15 +84,24 @@ export default function App() {
         onBack={() => setScreen('campaign')}
         onUpdateRoster={(roster, gold) => persist({ ...save, roster, gold })}
         onLaunch={(playerArmy) => {
+          // CP scales gently with chapter; the player army becomes the
+          // deployment pool that is fed onto the field during battle.
+          const startingCP = 60 + chapter.id * 6;
           setBattleConfig({
             arena: chapter.arena,
-            playerArmy,
+            playerArmy: [], // player units are deployed during battle via CP
             enemyArmy: chapter.enemies.flatMap((e) =>
               Array.from({ length: e.count }, () => ({
                 type: e.type,
                 level: e.level ?? 1,
               })),
             ),
+            statScale: chapter.statScale,
+            multiLane: chapter.multiLane,
+            collisionZones: ARENA_COLLISION_ZONES[chapter.arena],
+            startingCP,
+            cpPerKill: 12,
+            pendingDeployments: playerArmy,
           });
           setScreen('battle');
         }}

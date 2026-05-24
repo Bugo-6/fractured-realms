@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { ArenaType, BattleConfig, UnitTypeId } from '../game/types';
 import { UNIT_DEFS, ALL_PLAYABLE, ALL_ENEMIES, hexToCss } from '../game/unitDefs';
-import { ARENA_NAMES } from '../game/arenaBuilder';
+import { ARENA_NAMES, ARENA_COLLISION_ZONES } from '../game/arenaBuilder';
 
 interface SandboxSetupProps {
   onBack: () => void;
@@ -56,6 +56,7 @@ export const SandboxSetup: React.FC<SandboxSetupProps> = ({ onBack, onLaunch }) 
       arena,
       playerArmy: buildArmy(playerCounts),
       enemyArmy: buildArmy(enemyCounts),
+      collisionZones: ARENA_COLLISION_ZONES[arena],
     });
   };
 

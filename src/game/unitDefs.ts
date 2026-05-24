@@ -1,4 +1,4 @@
-import type { UnitDef, UnitTypeId, FactionId } from './types';
+import type { UnitDef, UnitTypeId, FactionId, DamageType } from './types';
 
 // Range values from the design doc are in a 0-350 "pixel" scale.
 // World units are scaled down: 1 world unit ~= 10 design pixels.
@@ -18,6 +18,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 12,
     attackKind: 'ranged',
     attackCooldown: 0.7,
+    damageType: 'bullet',
+    armorType: 'flesh',
     description: 'Fast, lightly armed recon trooper with a pistol.',
   },
   rifleman: {
@@ -32,6 +34,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 20,
     attackKind: 'ranged',
     attackCooldown: 0.9,
+    damageType: 'bullet',
+    armorType: 'flesh',
     description: 'Standard infantry. Reliable assault rifle.',
   },
   heavy: {
@@ -46,6 +50,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 55,
     attackKind: 'ranged',
     attackCooldown: 1.3,
+    damageType: 'bullet',
+    armorType: 'flesh',
     description: 'Slow but devastating minigun operator.',
   },
   medic: {
@@ -61,6 +67,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'heal',
     attackCooldown: 1.0,
     specialAbility: 'supplyDrop',
+    damageType: 'heal',
+    armorType: 'flesh',
     description: 'Heals nearby wounded allies over time. Periodic AoE supply drop.',
   },
 
@@ -77,6 +85,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 25,
     attackKind: 'melee',
     attackCooldown: 0.6,
+    damageType: 'bullet',
+    armorType: 'flesh',
     description: 'Fast melee berserker with a brutal chain weapon.',
   },
   bomber: {
@@ -92,6 +102,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'explosive',
     attackCooldown: 1.8,
     specialAbility: 'suicideBomber',
+    damageType: 'explosive',
+    armorType: 'flesh',
     description: 'Lobs explosives dealing splash area damage. Self-destructs in enemy clusters.',
   },
   sniper: {
@@ -106,6 +118,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 48,
     attackKind: 'ranged',
     attackCooldown: 2.0,
+    damageType: 'bullet',
+    armorType: 'flesh',
     description: 'Extreme range marksman. Devastating but fragile.',
   },
 
@@ -122,6 +136,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 70,
     attackKind: 'ranged',
     attackCooldown: 0.8,
+    damageType: 'energy',
+    armorType: 'armored',
     description: 'Durable autonomous combat robot.',
   },
   warDrone: {
@@ -137,6 +153,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'ranged',
     attackCooldown: 0.6,
     flying: true,
+    damageType: 'energy',
+    armorType: 'armored',
     description: 'Ultra fast flying gunship drone.',
   },
   mechWalker: {
@@ -153,6 +171,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackCooldown: 1.1,
     scale: 1.6,
     specialAbility: 'overclock',
+    damageType: 'energy',
+    armorType: 'armored',
     description: 'Boss-tier walker. The pride of the Tech Division. Can overclock.',
   },
 
@@ -169,6 +189,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 0,
     attackKind: 'melee',
     attackCooldown: 1.2,
+    damageType: 'melee',
+    armorType: 'flesh',
     description: 'Slow shambling Feral. Dangerous in swarms.',
   },
   feral: {
@@ -183,6 +205,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 0,
     attackKind: 'melee',
     attackCooldown: 0.7,
+    damageType: 'melee',
+    armorType: 'flesh',
     description: 'Fast, hunched mutant predator.',
   },
   brute: {
@@ -198,6 +222,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'melee',
     attackCooldown: 1.1,
     scale: 1.2,
+    damageType: 'melee',
+    armorType: 'flesh',
     description: 'Hulking mutant tank with oversized arms.',
   },
   alpha: {
@@ -213,6 +239,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'melee',
     attackCooldown: 1.0,
     scale: 1.8,
+    damageType: 'melee',
+    armorType: 'flesh',
     description: 'The mutant warlord. A living fortress.',
   },
   killerBot: {
@@ -227,6 +255,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 0,
     attackKind: 'ranged',
     attackCooldown: 0.7,
+    damageType: 'energy',
+    armorType: 'armored',
     description: 'Precision military robot with a red optic.',
   },
   robotTank: {
@@ -242,6 +272,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'ranged',
     attackCooldown: 1.4,
     scale: 1.3,
+    damageType: 'energy',
+    armorType: 'heavy',
     description: 'Heavily armored treaded war machine.',
   },
 };

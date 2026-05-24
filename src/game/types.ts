@@ -35,6 +35,10 @@ export type UnitTypeId =
 
 export type AttackKind = 'ranged' | 'melee' | 'heal' | 'explosive';
 
+// ---- Hard counter system ----
+export type DamageType = 'bullet' | 'explosive' | 'energy' | 'melee' | 'heal';
+export type ArmorType = 'flesh' | 'armored' | 'heavy';
+
 export interface UnitDef {
   id: UnitTypeId;
   name: string;
@@ -50,6 +54,8 @@ export interface UnitDef {
   flying?: boolean; // floats above ground
   scale?: number; // model scale multiplier
   specialAbility?: 'supplyDrop' | 'suicideBomber' | 'overclock';
+  damageType: DamageType; // for hard-counter damage multipliers
+  armorType: ArmorType; // for hard-counter damage multipliers
   description: string;
 }
 
@@ -76,6 +82,8 @@ export interface ChapterDef {
   reward: number;
   unlocks?: UnitTypeId[]; // unit types unlocked on victory
   recommended: number; // recommended army gold value
+  statScale?: number; // multiplier applied to enemy hp/dmg (difficulty curve)
+  multiLane?: boolean; // enemies flank from two sides
 }
 
 export interface EnemySpawn {
@@ -117,6 +125,8 @@ export interface BattleUnit {
   attackCooldown: number;
   cooldownTimer: number;
   facing: number; // radians, rotation around Y
+  damageType: DamageType; // hard-counter damage type
+  armorType: ArmorType; // hard-counter armor type
   alive: boolean;
   dying: boolean;
   deathTimer: number; // counts up after death for fall animation
@@ -152,10 +162,25 @@ export interface Projectile {
   color: number;
 }
 
+export interface CollisionZone {
+  x: number;
+  z: number;
+  radius: number;
+}
+
 export interface BattleConfig {
   arena: ArenaType;
   playerArmy: { type: UnitTypeId; level: number }[];
   enemyArmy: { type: UnitTypeId; level: number }[];
+  // hard-counter / difficulty
+  statScale?: number; // multiply enemy hp/dmg
+  multiLane?: boolean; // enemies flank from two sides
+  collisionZones?: CollisionZone[];
+  // ---- Command Points (real-time deployment) ----
+  startingCP?: number; // initial command points (default 60). 9999 = sandbox unlimited
+  cpPerKill?: number; // CP gained per enemy killed (default 12)
+  // units the player may deploy during battle (the deployment "pool")
+  pendingDeployments?: { type: UnitTypeId; level: number }[];
 }
 
 export interface BattleState {
@@ -167,6 +192,16 @@ export interface BattleState {
   winner: 'player' | 'enemy' | null;
   elapsed: number;
   arena?: ArenaType;
+  // ---- collision avoidance ----
+  collisionZones?: CollisionZone[];
+  // ---- command points (real-time deployment) ----
+  commandPoints: number;
+  maxCP: number;
+  cpPerKill: number;
+  // cheapest deployable unit cost; while CP >= this and a pool exists, an empty
+  // player field does not count as a defeat (the player can still reinforce).
+  minDeployCost: number;
+  hasDeployPool: boolean;
   // ---- underground lava eruption hazard ----
   eruptionTimer?: number;
   eruptionX?: number;

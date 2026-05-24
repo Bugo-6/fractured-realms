@@ -2,7 +2,7 @@
 // Returns a group of static scenery plus configures scene fog/background.
 
 import * as THREE from 'three';
-import type { ArenaType } from './types';
+import type { ArenaType, CollisionZone } from './types';
 
 export interface ArenaSetup {
   scenery: THREE.Group;
@@ -14,6 +14,7 @@ export interface ArenaSetup {
   sunIntensity: number;
   sunPos: [number, number, number];
   extraLights?: THREE.Light[];
+  collisionZones?: CollisionZone[];
 }
 
 function rand(min: number, max: number): number {
@@ -82,6 +83,17 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sun: 0xffd9a0,
         sunIntensity: 1.3,
         sunPos: [25, 40, 20],
+        // Collision zones around the ruined buildings (half largest dim + 0.5).
+        collisionZones: [
+          { x: -34, z: -22, radius: 3.5 },
+          { x: -30, z: 20, radius: 3.5 },
+          { x: -20, z: -24, radius: 3.5 },
+          { x: 32, z: -20, radius: 3.5 },
+          { x: 28, z: 22, radius: 3.5 },
+          { x: 22, z: -22, radius: 3.5 },
+          { x: 0, z: -28, radius: 3.5 },
+          { x: -8, z: 26, radius: 3.5 },
+        ],
       };
     }
 
@@ -128,6 +140,15 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sun: 0xfff4e0,
         sunIntensity: 1.25,
         sunPos: [20, 38, 25],
+        // Collision zones around the stone ruins.
+        collisionZones: [
+          { x: -30, z: -18, radius: 3 },
+          { x: -24, z: 16, radius: 3 },
+          { x: -14, z: -20, radius: 3 },
+          { x: -6, z: 18, radius: 3 },
+          { x: -32, z: 4, radius: 3 },
+          { x: -18, z: 0, radius: 3 },
+        ],
       };
     }
 
@@ -169,6 +190,14 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sun: 0xffae66,
         sunIntensity: 0.9,
         sunPos: [-20, 35, 15],
+        // Collision zones around the factory structures.
+        collisionZones: [
+          { x: -34, z: -20, radius: 4 },
+          { x: -28, z: 22, radius: 4 },
+          { x: 30, z: -22, radius: 4 },
+          { x: 26, z: 20, radius: 4 },
+          { x: 0, z: -28, radius: 4 },
+        ],
       };
     }
 
@@ -222,19 +251,21 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sun: 0xfff0c8,
         sunIntensity: 1.5,
         sunPos: [10, 50, 10],
+        // Collision zones around notable dune mounds.
+        collisionZones: [
+          { x: -22, z: -14, radius: 4 },
+          { x: 18, z: 12, radius: 4 },
+          { x: -10, z: 18, radius: 4 },
+          { x: 24, z: -16, radius: 4 },
+          { x: 0, z: 0, radius: 3 },
+        ],
       };
     }
 
     case 'underground': {
       scenery.add(ground(110, 80, 0x2a2420));
-      // cave ceiling
-      const ceil = new THREE.Mesh(
-        new THREE.PlaneGeometry(110, 80),
-        new THREE.MeshStandardMaterial({ color: 0x181410, roughness: 1, side: THREE.DoubleSide }),
-      );
-      ceil.rotation.x = Math.PI / 2;
-      ceil.position.y = 14;
-      scenery.add(ceil);
+      // No solid ceiling: the cave feeling comes from fog + dark lighting so the
+      // tactical camera can see the battlefield from its lower, angled position.
       // stalagmites / rock columns
       for (let i = 0; i < 10; i++) {
         const col = new THREE.Mesh(
@@ -288,6 +319,15 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sunIntensity: 0.4,
         sunPos: [0, 30, 0],
         extraLights,
+        // Collision zones around stalagmite rock columns.
+        collisionZones: [
+          { x: -26, z: -14, radius: 3 },
+          { x: -12, z: 16, radius: 3 },
+          { x: 8, z: -18, radius: 3 },
+          { x: 22, z: 10, radius: 3 },
+          { x: 0, z: 4, radius: 2.5 },
+          { x: -20, z: 20, radius: 2.5 },
+        ],
       };
     }
 
@@ -335,6 +375,14 @@ export function buildArena(type: ArenaType): ArenaSetup {
         sunIntensity: 0.8,
         sunPos: [15, 40, -20],
         extraLights,
+        // Central lava pool is a large no-go zone; plus scattered rock clusters.
+        collisionZones: [
+          { x: 0, z: 0, radius: 11 },
+          { x: -24, z: -16, radius: 3 },
+          { x: 26, z: 14, radius: 3 },
+          { x: -18, z: 18, radius: 3 },
+          { x: 20, z: -18, radius: 3 },
+        ],
       };
     }
 
@@ -372,6 +420,58 @@ export function getHazardZones(elapsed: number): { x: number; z: number }[] {
   }
   return zones;
 }
+
+// Pure-data collision zones per arena (no THREE objects). Used by the engine
+// for movement collision avoidance without having to build the 3D scenery.
+export const ARENA_COLLISION_ZONES: Record<ArenaType, CollisionZone[]> = {
+  desertTown: [
+    { x: -34, z: -22, radius: 3.5 },
+    { x: -30, z: 20, radius: 3.5 },
+    { x: -20, z: -24, radius: 3.5 },
+    { x: 32, z: -20, radius: 3.5 },
+    { x: 28, z: 22, radius: 3.5 },
+    { x: 22, z: -22, radius: 3.5 },
+    { x: 0, z: -28, radius: 3.5 },
+    { x: -8, z: 26, radius: 3.5 },
+  ],
+  coastalRuins: [
+    { x: -30, z: -18, radius: 3 },
+    { x: -24, z: 16, radius: 3 },
+    { x: -14, z: -20, radius: 3 },
+    { x: -6, z: 18, radius: 3 },
+    { x: -32, z: 4, radius: 3 },
+    { x: -18, z: 0, radius: 3 },
+  ],
+  industrial: [
+    { x: -34, z: -20, radius: 4 },
+    { x: -28, z: 22, radius: 4 },
+    { x: 30, z: -22, radius: 4 },
+    { x: 26, z: 20, radius: 4 },
+    { x: 0, z: -28, radius: 4 },
+  ],
+  desertOpen: [
+    { x: -22, z: -14, radius: 4 },
+    { x: 18, z: 12, radius: 4 },
+    { x: -10, z: 18, radius: 4 },
+    { x: 24, z: -16, radius: 4 },
+    { x: 0, z: 0, radius: 3 },
+  ],
+  underground: [
+    { x: -26, z: -14, radius: 3 },
+    { x: -12, z: 16, radius: 3 },
+    { x: 8, z: -18, radius: 3 },
+    { x: 22, z: 10, radius: 3 },
+    { x: 0, z: 4, radius: 2.5 },
+    { x: -20, z: 20, radius: 2.5 },
+  ],
+  crater: [
+    { x: 0, z: 0, radius: 11 },
+    { x: -24, z: -16, radius: 3 },
+    { x: 26, z: 14, radius: 3 },
+    { x: -18, z: 18, radius: 3 },
+    { x: 20, z: -18, radius: 3 },
+  ],
+};
 
 export const ARENA_NAMES: Record<ArenaType, string> = {
   desertTown: 'Abandoned Desert Town',

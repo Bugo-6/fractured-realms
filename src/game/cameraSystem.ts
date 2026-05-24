@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { BattleUnit } from './types';
+import type { BattleUnit, ArenaType } from './types';
 
 export type CameraMode = 'tactical' | 'action' | 'cinematic' | 'freeOrbit';
 
@@ -7,6 +7,7 @@ export class CameraController {
   private camera: THREE.PerspectiveCamera;
   private mode: CameraMode = 'tactical';
   private trackedUnitId: number | null = null;
+  private arena?: ArenaType | string;
 
   // Cinematic state
   private cinematicAngle = 0;
@@ -32,8 +33,9 @@ export class CameraController {
   private isDragging = false;
   private lastMouse = { x: 0, y: 0 };
 
-  constructor(camera: THREE.PerspectiveCamera) {
+  constructor(camera: THREE.PerspectiveCamera, arena?: ArenaType | string) {
     this.camera = camera;
+    this.arena = arena;
     this.currentPos.copy(camera.position);
   }
 
@@ -88,7 +90,12 @@ export class CameraController {
 
     switch (this.mode) {
       case 'tactical': {
-        this.targetPos.set(0, 28, 22);
+        if (this.arena === 'underground') {
+          // Lower, angled-in view that sees under the cave (no solid ceiling).
+          this.targetPos.set(0, 12, 18);
+        } else {
+          this.targetPos.set(0, 28, 22);
+        }
         this.targetLookAt.set(0, 0, 0);
         break;
       }

@@ -4,8 +4,8 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import type { BattleConfig, BattleState } from '../game/types';
-import { createBattle, stepBattle } from '../game/engine';
+import type { BattleConfig, BattleState, UnitTypeId } from '../game/types';
+import { createBattle, stepBattle, deployUnit } from '../game/engine';
 import { buildUnitModel } from '../game/unitModels';
 import { buildArena } from '../game/arenaBuilder';
 import { CameraController, type CameraMode } from '../game/cameraSystem';
@@ -15,6 +15,10 @@ interface BattleSceneProps {
   paused: boolean;
   speed: number; // sim speed multiplier
   onFinished: (winner: 'player' | 'enemy') => void;
+  // Command-point deployment integration (optional).
+  onCPUpdate?: (cp: number, maxCp: number) => void;
+  // Receives a deploy function the parent can call to deploy a unit type.
+  registerDeploy?: (fn: ((type: UnitTypeId, level: number) => boolean) | null) => void;
 }
 
 interface HealthBar {
@@ -49,6 +53,8 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   paused,
   speed,
   onFinished,
+  onCPUpdate,
+  registerDeploy,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [bars, setBars] = useState<HealthBar[]>([]);
@@ -59,6 +65,7 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   const speedRef = useRef(speed);
   const finishedRef = useRef(false);
   const onFinishedRef = useRef(onFinished);
+  const onCPUpdateRef = useRef(onCPUpdate);
   const camControllerRef = useRef<CameraController | null>(null);
   const camModeRef = useRef<CameraMode>('tactical');
 
@@ -71,6 +78,9 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   useEffect(() => {
     onFinishedRef.current = onFinished;
   }, [onFinished]);
+  useEffect(() => {
+    onCPUpdateRef.current = onCPUpdate;
+  }, [onCPUpdate]);
 
   const switchCamMode = useCallback((mode: CameraMode) => {
     camModeRef.current = mode;
@@ -97,8 +107,8 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     camera.position.set(0, 28, 22);
     camera.lookAt(0, 0, 0);
 
-    // Camera controller (4 modes)
-    const camCtrl = new CameraController(camera);
+    // Camera controller (4 modes) — arena-aware tactical framing
+    const camCtrl = new CameraController(camera, config.arena);
     camCtrl.setMode(camModeRef.current);
     camControllerRef.current = camCtrl;
 
@@ -141,6 +151,15 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     // Track which units were alive last frame to detect deaths.
     const wasAlive = new Map<number, boolean>();
     for (const u of state.units) wasAlive.set(u.id, true);
+
+    // ---- Command-point deployment ----
+    // Expose a deploy function to the parent. Newly spawned units get their mesh
+    // created lazily in the unit sync loop below.
+    if (registerDeploy) {
+      registerDeploy((type, level) => deployUnit(state, type, level));
+    }
+    let cpAccum = 0;
+    let lastReportedCP = -1;
 
     // ---- Debris particles (robot death bursts) ----
     const debris: DebrisParticle[] = [];
@@ -228,6 +247,16 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       // ---- Update camera ----
       camCtrl.update(dt, state.units);
 
+      // ---- Report command points to parent (throttled) ----
+      cpAccum += dt;
+      if (cpAccum > 0.1) {
+        cpAccum = 0;
+        if (onCPUpdateRef.current && state.commandPoints !== lastReportedCP) {
+          lastReportedCP = state.commandPoints;
+          onCPUpdateRef.current(state.commandPoints, state.maxCP);
+        }
+      }
+
       // ---- Animate environmental hazards (sandstorm sheets, lava warnings) ----
       arena.scenery.children.forEach((child) => {
         if (child.name?.startsWith('sandsheet_')) {
@@ -246,7 +275,16 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
 
       // ---- Sync unit meshes ----
       for (const u of state.units) {
-        const m = meshMap.get(u.id);
+        let m = meshMap.get(u.id);
+        // Lazily create a mesh for units deployed mid-battle.
+        if (!m && u.alive) {
+          m = buildUnitModel(u.type, u.level, u.team);
+          m.position.set(u.x, u.flying ? 1.4 : 0, u.z);
+          m.rotation.y = u.facing;
+          scene.add(m);
+          meshMap.set(u.id, m);
+          wasAlive.set(u.id, true);
+        }
         if (!m) continue;
         if (!u.alive) {
           if (meshMap.has(u.id)) {
@@ -419,6 +457,7 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         mount.removeChild(renderer.domElement);
       }
       camControllerRef.current = null;
+      if (registerDeploy) registerDeploy(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
