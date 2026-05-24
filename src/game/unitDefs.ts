@@ -60,7 +60,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 30,
     attackKind: 'heal',
     attackCooldown: 1.0,
-    description: 'Heals nearby wounded allies over time.',
+    specialAbility: 'supplyDrop',
+    description: 'Heals nearby wounded allies over time. Periodic AoE supply drop.',
   },
 
   // ---- Militia (orange) ----
@@ -90,7 +91,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     cost: 65,
     attackKind: 'explosive',
     attackCooldown: 1.8,
-    description: 'Lobs explosives dealing splash area damage.',
+    specialAbility: 'suicideBomber',
+    description: 'Lobs explosives dealing splash area damage. Self-destructs in enemy clusters.',
   },
   sniper: {
     id: 'sniper',
@@ -150,7 +152,8 @@ export const UNIT_DEFS: Record<UnitTypeId, UnitDef> = {
     attackKind: 'ranged',
     attackCooldown: 1.1,
     scale: 1.6,
-    description: 'Boss-tier walker. The pride of the Tech Division.',
+    specialAbility: 'overclock',
+    description: 'Boss-tier walker. The pride of the Tech Division. Can overclock.',
   },
 
   // ---- Enemy only ----

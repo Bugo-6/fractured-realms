@@ -49,6 +49,7 @@ export interface UnitDef {
   attackCooldown: number; // seconds between attacks
   flying?: boolean; // floats above ground
   scale?: number; // model scale multiplier
+  specialAbility?: 'supplyDrop' | 'suicideBomber' | 'overclock';
   description: string;
 }
 
@@ -126,6 +127,16 @@ export interface BattleUnit {
   // transient effects
   hitFlash: number; // > 0 means recently hit
   attackAnim: number; // > 0 means recently attacked (lunge / muzzle flash)
+  // ---- special abilities ----
+  specialCooldown?: number; // cooldown timer for special ability
+  suicideMode?: boolean; // bomber charging to self-destruct
+  overclocked?: boolean; // mech walker overclock active
+  overclockedTimer?: number; // time remaining in overclock
+  overclockedCooldown?: number; // cooldown after overclock (includes freeze)
+  baseAttackCooldown?: number; // original attackCooldown (for overclock restore)
+  baseSpd?: number; // original spd (for overclock freeze restore)
+  frozen?: boolean; // mech walker post-overclock freeze
+  frozenTimer?: number; // time remaining frozen
 }
 
 export interface Projectile {
@@ -155,4 +166,10 @@ export interface BattleState {
   finished: boolean;
   winner: 'player' | 'enemy' | null;
   elapsed: number;
+  arena?: ArenaType;
+  // ---- underground lava eruption hazard ----
+  eruptionTimer?: number;
+  eruptionX?: number;
+  eruptionZ?: number;
+  eruptionActive?: boolean;
 }

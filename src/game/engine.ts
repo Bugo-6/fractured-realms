@@ -79,14 +79,28 @@ function layoutArmy(
 export function createBattle(config: BattleConfig): BattleState {
   const playerUnits = layoutArmy(config.playerArmy, 'player');
   const enemyUnits = layoutArmy(config.enemyArmy, 'enemy');
+  const allUnits = [...playerUnits, ...enemyUnits];
+
+  // Environmental hazard: open dunes reduce effective weapon range.
+  if (config.arena === 'desertOpen') {
+    for (const u of allUnits) {
+      u.range *= 0.65;
+    }
+  }
+
   return {
-    units: [...playerUnits, ...enemyUnits],
+    units: allUnits,
     projectiles: [],
     playerAlive: playerUnits.length,
     enemyAlive: enemyUnits.length,
     finished: false,
     winner: null,
     elapsed: 0,
+    arena: config.arena,
+    eruptionTimer: 8,
+    eruptionX: 0,
+    eruptionZ: 0,
+    eruptionActive: false,
   };
 }
 
@@ -245,6 +259,12 @@ export function stepBattle(state: BattleState, dt: number): void {
     }
   }
 
+  // ---- Special abilities ----
+  updateSpecialAbilities(state, dt);
+
+  // ---- Environmental hazard: underground lava eruptions ----
+  updateLavaEruption(state, dt);
+
   // ---- Projectiles ----
   updateProjectiles(state, dt, byId);
 
@@ -263,6 +283,193 @@ export function stepBattle(state: BattleState, dt: number): void {
   if (!state.finished && (pAlive === 0 || eAlive === 0)) {
     state.finished = true;
     state.winner = eAlive === 0 ? 'player' : 'enemy';
+  }
+}
+
+// ---- Special abilities ----
+
+const SUPPLY_DROP_INTERVAL = 12; // seconds
+const SUPPLY_DROP_RADIUS = 8;
+const SUPPLY_DROP_HEAL = 15;
+
+const OVERCLOCK_INTERVAL = 18; // seconds between overclock activations
+const OVERCLOCK_DURATION = 5; // seconds of boosted attack speed
+const OVERCLOCK_FREEZE = 2; // seconds frozen afterwards
+
+const SUICIDE_TRIGGER_RANGE = 5; // distance to nearest enemy to consider charging
+const SUICIDE_BLAST_RADIUS = 6; // damage radius on self-destruct
+const SUICIDE_CLUSTER_MIN = 3; // enemies needed within blast radius to detonate
+const SUICIDE_DMG_MULT = 2.5;
+
+function countEnemiesNear(
+  units: BattleUnit[],
+  team: 'player' | 'enemy',
+  x: number,
+  z: number,
+  radius: number,
+): number {
+  const r2 = radius * radius;
+  let count = 0;
+  for (const u of units) {
+    if (!u.alive || u.dying) continue;
+    if (u.team === team) continue;
+    const dx = u.x - x;
+    const dz = u.z - z;
+    if (dx * dx + dz * dz <= r2) count++;
+  }
+  return count;
+}
+
+function updateSpecialAbilities(state: BattleState, dt: number): void {
+  const units = state.units;
+  for (const unit of units) {
+    if (!unit.alive || unit.dying) continue;
+    const def = UNIT_DEFS[unit.type];
+    const ability = def.specialAbility;
+    if (!ability) continue;
+
+    switch (ability) {
+      case 'supplyDrop': {
+        if (unit.specialCooldown === undefined) unit.specialCooldown = SUPPLY_DROP_INTERVAL;
+        unit.specialCooldown -= dt;
+        if (unit.specialCooldown <= 0) {
+          unit.specialCooldown = SUPPLY_DROP_INTERVAL;
+          // AoE healing pulse to all friendly units within radius
+          const r2 = SUPPLY_DROP_RADIUS * SUPPLY_DROP_RADIUS;
+          for (const ally of units) {
+            if (!ally.alive || ally.dying) continue;
+            if (ally.team !== unit.team) continue;
+            const dx = ally.x - unit.x;
+            const dz = ally.z - unit.z;
+            if (dx * dx + dz * dz > r2) continue;
+            ally.hp = Math.min(ally.maxHp, ally.hp + SUPPLY_DROP_HEAL);
+          }
+          unit.attackAnim = 0.3;
+        }
+        break;
+      }
+
+      case 'suicideBomber': {
+        // Find nearest enemy
+        let nearest: BattleUnit | null = null;
+        let nearestD = Infinity;
+        for (const other of units) {
+          if (!other.alive || other.dying) continue;
+          if (other.team === unit.team) continue;
+          const d = dist2(unit, other.x, other.z);
+          if (d < nearestD) {
+            nearestD = d;
+            nearest = other;
+          }
+        }
+        if (nearest) {
+          const dist = Math.sqrt(nearestD);
+          // Enter suicide mode when close to an enemy cluster
+          if (
+            dist <= SUICIDE_TRIGGER_RANGE &&
+            countEnemiesNear(units, unit.team, unit.x, unit.z, SUICIDE_BLAST_RADIUS) >=
+              SUICIDE_CLUSTER_MIN
+          ) {
+            unit.suicideMode = true;
+            // Detonate: damage all enemies in blast radius, then kill self
+            const r2 = SUICIDE_BLAST_RADIUS * SUICIDE_BLAST_RADIUS;
+            for (const other of units) {
+              if (!other.alive || other.dying) continue;
+              if (other.team === unit.team) continue;
+              const dx = other.x - unit.x;
+              const dz = other.z - unit.z;
+              if (dx * dx + dz * dz > r2) continue;
+              applyDamage(other, unit.dmg * SUICIDE_DMG_MULT);
+            }
+            // Kill self
+            unit.hp = 0;
+            if (!unit.dying) {
+              unit.dying = true;
+              unit.deathTimer = 0;
+            }
+          }
+        }
+        break;
+      }
+
+      case 'overclock': {
+        if (unit.baseAttackCooldown === undefined) unit.baseAttackCooldown = unit.attackCooldown;
+        if (unit.baseSpd === undefined) unit.baseSpd = unit.spd;
+        if (unit.specialCooldown === undefined) unit.specialCooldown = OVERCLOCK_INTERVAL;
+
+        if (unit.frozen) {
+          // Frozen freeze period after overclock
+          unit.frozenTimer = (unit.frozenTimer ?? 0) - dt;
+          unit.spd = 0;
+          if (unit.frozenTimer <= 0) {
+            unit.frozen = false;
+            unit.spd = unit.baseSpd;
+          }
+        } else if (unit.overclocked) {
+          unit.overclockedTimer = (unit.overclockedTimer ?? 0) - dt;
+          if (unit.overclockedTimer <= 0) {
+            // End overclock: restore attack speed, enter freeze
+            unit.overclocked = false;
+            unit.attackCooldown = unit.baseAttackCooldown;
+            unit.frozen = true;
+            unit.frozenTimer = OVERCLOCK_FREEZE;
+            unit.spd = 0;
+          }
+        } else {
+          unit.specialCooldown -= dt;
+          if (unit.specialCooldown <= 0) {
+            // Activate overclock
+            unit.specialCooldown = OVERCLOCK_INTERVAL;
+            unit.overclocked = true;
+            unit.overclockedTimer = OVERCLOCK_DURATION;
+            unit.attackCooldown = unit.baseAttackCooldown * 0.5;
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+// ---- Environmental hazard: underground lava eruptions ----
+
+const ERUPTION_INTERVAL = 8; // seconds between eruptions
+const ERUPTION_DURATION = 2; // seconds an eruption stays active
+const ERUPTION_RADIUS = 2.5;
+const ERUPTION_DAMAGE = 15;
+
+function updateLavaEruption(state: BattleState, dt: number): void {
+  if (state.arena !== 'underground') return;
+  if (state.eruptionTimer === undefined) state.eruptionTimer = ERUPTION_INTERVAL;
+
+  if (state.eruptionActive) {
+    // Active eruption damages units in the zone, then expires.
+    const r2 = ERUPTION_RADIUS * ERUPTION_RADIUS;
+    const ex = state.eruptionX ?? 0;
+    const ez = state.eruptionZ ?? 0;
+    for (const u of state.units) {
+      if (!u.alive || u.dying) continue;
+      if (u.flying) continue; // flying units avoid ground lava
+      const dx = u.x - ex;
+      const dz = u.z - ez;
+      if (dx * dx + dz * dz <= r2) {
+        applyDamage(u, ERUPTION_DAMAGE * dt);
+      }
+    }
+    state.eruptionTimer -= dt;
+    if (state.eruptionTimer <= 0) {
+      state.eruptionActive = false;
+      state.eruptionTimer = ERUPTION_INTERVAL;
+    }
+  } else {
+    state.eruptionTimer -= dt;
+    if (state.eruptionTimer <= 0) {
+      // Trigger a new eruption at a random position.
+      state.eruptionActive = true;
+      state.eruptionTimer = ERUPTION_DURATION;
+      state.eruptionX = FIELD_MIN_X + Math.random() * (FIELD_MAX_X - FIELD_MIN_X);
+      state.eruptionZ = FIELD_MIN_Z + Math.random() * (FIELD_MAX_Z - FIELD_MIN_Z);
+    }
   }
 }
 

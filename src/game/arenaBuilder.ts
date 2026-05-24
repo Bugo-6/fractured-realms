@@ -196,6 +196,23 @@ export function buildArena(type: ArenaType): ArenaSetup {
         rock.castShadow = true;
         scenery.add(rock);
       }
+      // Sandstorm: floating sand sheets (animated in BattleScene)
+      for (let i = 0; i < 5; i++) {
+        const sheet = new THREE.Mesh(
+          new THREE.PlaneGeometry(rand(15, 35), rand(4, 10)),
+          new THREE.MeshBasicMaterial({
+            color: 0xc4a45a,
+            transparent: true,
+            opacity: 0.08,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          }),
+        );
+        sheet.position.set(rand(-30, 30), rand(2, 8), rand(-20, 20));
+        sheet.rotation.y = rand(0, Math.PI);
+        sheet.name = `sandsheet_${i}`;
+        scenery.add(sheet);
+      }
       return {
         scenery,
         background: 0xe8c27a,
@@ -243,6 +260,23 @@ export function buildArena(type: ArenaType): ArenaSetup {
         const pl = new THREE.PointLight(0xff5a00, 1.6, 22, 2);
         pl.position.set(cx, 1.5, cz);
         extraLights.push(pl);
+      }
+      // Lava eruption warning circles (pulse animated in BattleScene).
+      // These are visual indicators; the actual eruption hazard is managed by engine.
+      for (let i = 0; i < 4; i++) {
+        const warning = new THREE.Mesh(
+          new THREE.CircleGeometry(rand(1.2, 2.2), 16),
+          new THREE.MeshStandardMaterial({
+            color: 0xff4400,
+            emissive: 0xff2200,
+            emissiveIntensity: 0.8,
+            side: THREE.DoubleSide,
+          }),
+        );
+        warning.rotation.x = -Math.PI / 2;
+        warning.position.set(rand(-30, 30), 0.08, rand(-20, 20));
+        warning.name = `lavawarning_${i}`;
+        scenery.add(warning);
       }
       return {
         scenery,
@@ -318,6 +352,25 @@ export function buildArena(type: ArenaType): ArenaSetup {
       };
     }
   }
+}
+
+// Returns candidate lava eruption positions for the underground arena.
+// The engine may use these for damage placement, or they can remain purely visual.
+export function getHazardZones(elapsed: number): { x: number; z: number }[] {
+  const zones: { x: number; z: number }[] = [];
+  const count = 3;
+  for (let i = 0; i < count; i++) {
+    // Pseudo-random but time-seeded so positions drift over the battle.
+    const seed = Math.sin(elapsed * 0.5 + i * 13.37) * 43758.5453;
+    const fx = seed - Math.floor(seed);
+    const seed2 = Math.sin(elapsed * 0.7 + i * 7.13) * 24634.6345;
+    const fz = seed2 - Math.floor(seed2);
+    zones.push({
+      x: -34 + fx * 68,
+      z: -22 + fz * 44,
+    });
+  }
+  return zones;
 }
 
 export const ARENA_NAMES: Record<ArenaType, string> = {

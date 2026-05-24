@@ -1,12 +1,14 @@
 // Main Three.js React component. Renders the 3D battle, drives the simulation,
-// and overlays HTML health bars positioned via Vector3.project().
+// overlays HTML health bars, and manages the dynamic camera system, debris
+// particles, camera shake on explosions, and animated environmental hazards.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import type { BattleConfig, BattleState } from '../game/types';
 import { createBattle, stepBattle } from '../game/engine';
 import { buildUnitModel } from '../game/unitModels';
 import { buildArena } from '../game/arenaBuilder';
+import { CameraController, type CameraMode } from '../game/cameraSystem';
 
 interface BattleSceneProps {
   config: BattleConfig;
@@ -24,6 +26,24 @@ interface HealthBar {
   visible: boolean;
 }
 
+interface DebrisParticle {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+  maxLife: number;
+}
+
+const ROBOT_TYPES = new Set(['killerBot', 'robotTank', 'combatBot', 'warDrone', 'mechWalker']);
+
+const CAM_LABELS: { mode: CameraMode; label: string; key: string }[] = [
+  { mode: 'tactical', label: 'Tactical', key: '1' },
+  { mode: 'action', label: 'Action Cam', key: '2' },
+  { mode: 'cinematic', label: 'Cinematic', key: '3' },
+  { mode: 'freeOrbit', label: 'Free Orbit', key: '4' },
+];
+
 export const BattleScene: React.FC<BattleSceneProps> = ({
   config,
   paused,
@@ -32,12 +52,15 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [bars, setBars] = useState<HealthBar[]>([]);
+  const [camMode, setCamMode] = useState<CameraMode>('tactical');
 
   // Refs that survive across the animation loop without re-rendering.
   const pausedRef = useRef(paused);
   const speedRef = useRef(speed);
   const finishedRef = useRef(false);
   const onFinishedRef = useRef(onFinished);
+  const camControllerRef = useRef<CameraController | null>(null);
+  const camModeRef = useRef<CameraMode>('tactical');
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -48,6 +71,12 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   useEffect(() => {
     onFinishedRef.current = onFinished;
   }, [onFinished]);
+
+  const switchCamMode = useCallback((mode: CameraMode) => {
+    camModeRef.current = mode;
+    setCamMode(mode);
+    camControllerRef.current?.setMode(mode);
+  }, []);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -67,6 +96,11 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 500);
     camera.position.set(0, 28, 22);
     camera.lookAt(0, 0, 0);
+
+    // Camera controller (4 modes)
+    const camCtrl = new CameraController(camera);
+    camCtrl.setMode(camModeRef.current);
+    camControllerRef.current = camCtrl;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
@@ -104,6 +138,39 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       meshMap.set(u.id, m);
     }
 
+    // Track which units were alive last frame to detect deaths.
+    const wasAlive = new Map<number, boolean>();
+    for (const u of state.units) wasAlive.set(u.id, true);
+
+    // ---- Debris particles (robot death bursts) ----
+    const debris: DebrisParticle[] = [];
+    const debrisGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+    const debrMats = [
+      new THREE.MeshStandardMaterial({ color: 0x4b5563, metalness: 0.8, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.6, roughness: 0.4 }),
+      new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.9, roughness: 0.2 }),
+    ];
+
+    function spawnDebris(x: number, y: number, z: number): void {
+      for (let i = 0; i < 8; i++) {
+        const dm = debrMats[Math.floor(Math.random() * debrMats.length)];
+        const dMesh = new THREE.Mesh(debrisGeo, dm);
+        dMesh.position.set(x, y + 0.5 + Math.random(), z);
+        dMesh.castShadow = true;
+        scene.add(dMesh);
+        const angle = Math.random() * Math.PI * 2;
+        const power = 2 + Math.random() * 5;
+        debris.push({
+          mesh: dMesh,
+          vx: Math.cos(angle) * power,
+          vy: 3 + Math.random() * 4,
+          vz: Math.sin(angle) * power,
+          life: 1.2 + Math.random() * 0.6,
+          maxLife: 1.8,
+        });
+      }
+    }
+
     // Projectile meshes pooled by id
     const projMap = new Map<number, THREE.Mesh>();
     const projGeo = new THREE.SphereGeometry(0.18, 6, 6);
@@ -117,6 +184,25 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+
+    // ---- Keyboard camera switch (keys 1-4) ----
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === '1') switchCamMode('tactical');
+      else if (e.key === '2') switchCamMode('action');
+      else if (e.key === '3') switchCamMode('cinematic');
+      else if (e.key === '4') switchCamMode('freeOrbit');
+    };
+    window.addEventListener('keydown', handleKey);
+
+    // ---- Mouse events for free orbit ----
+    const handleMouseDown = (e: MouseEvent) => camCtrl.onMouseDown(e);
+    const handleMouseMove = (e: MouseEvent) => camCtrl.onMouseMove(e);
+    const handleMouseUp = () => camCtrl.onMouseUp();
+    const handleWheel = (e: WheelEvent) => camCtrl.onWheel(e);
+    mount.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    mount.addEventListener('wheel', handleWheel, { passive: true });
 
     // ---- Animation loop ----
     let raf = 0;
@@ -139,17 +225,43 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
       }
 
+      // ---- Update camera ----
+      camCtrl.update(dt, state.units);
+
+      // ---- Animate environmental hazards (sandstorm sheets, lava warnings) ----
+      arena.scenery.children.forEach((child) => {
+        if (child.name?.startsWith('sandsheet_')) {
+          child.position.x += dt * 3;
+          if (child.position.x > 50) child.position.x -= 100;
+          child.rotation.y += dt * 0.1;
+        }
+        if (child.name?.startsWith('lavawarning_')) {
+          const pulse = 0.5 + Math.sin(state.elapsed * 3 + child.position.x) * 0.5;
+          const lm = (child as THREE.Mesh).material;
+          if (lm) {
+            (lm as THREE.MeshStandardMaterial).emissiveIntensity = 0.4 + pulse * 1.2;
+          }
+        }
+      });
+
       // ---- Sync unit meshes ----
       for (const u of state.units) {
         const m = meshMap.get(u.id);
         if (!m) continue;
         if (!u.alive) {
-          if (m.visible) {
+          if (meshMap.has(u.id)) {
             scene.remove(m);
             disposeGroup(m);
             meshMap.delete(u.id);
           }
           continue;
+        }
+
+        // Detect death this frame -> spawn debris for robots
+        if (u.dying && wasAlive.get(u.id) && ROBOT_TYPES.has(u.type)) {
+          spawnDebris(u.x, 0, u.z);
+          camCtrl.shake(0.4);
+          wasAlive.set(u.id, false);
         }
 
         const baseY = u.flying ? 1.4 : 0;
@@ -169,11 +281,10 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
           const t = Math.min(1, u.deathTimer / 0.6);
           m.rotation.x = t * (Math.PI / 2) * 0.9;
           y = baseY - t * 0.4;
-          // fade by scaling down material opacity-ish via scale
-          const s = (1 - t * 0.3) * u.scale;
-          m.scale.setScalar(s * (m.userData.baseScale ?? 1));
+          const sc = (1 - t * 0.3) * u.scale;
+          m.scale.setScalar(sc * (m.userData.baseScale ?? 1));
         } else {
-          m.rotation.x = u.flying ? 0 : 0;
+          m.rotation.x = 0;
           // subtle bob while moving / idle breathing
           y += Math.sin((state.elapsed + u.id) * 6) * (u.flying ? 0.12 : 0.03);
           // attack lunge
@@ -183,7 +294,7 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
         m.position.y = y;
 
-        // hit flash: tint via emissive on the figure's first child meshes
+        // hit flash: tint via emissive on the figure's meshes
         applyHitFlash(m, u.hitFlash);
 
         // rotate war drone rotors / spin aura
@@ -192,6 +303,33 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
         const aura = m.children.find((c) => c.name === 'aura');
         if (aura) aura.rotation.z += dt * 2;
+      }
+
+      // ---- Update debris ----
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i];
+        d.life -= dt;
+        if (d.life <= 0) {
+          scene.remove(d.mesh);
+          debris.splice(i, 1);
+          continue;
+        }
+        d.vy -= 9.8 * dt; // gravity
+        d.mesh.position.x += d.vx * dt;
+        d.mesh.position.y += d.vy * dt;
+        d.mesh.position.z += d.vz * dt;
+        if (d.mesh.position.y < 0.09) {
+          d.mesh.position.y = 0.09;
+          d.vx *= 0.6;
+          d.vz *= 0.6;
+          d.vy *= -0.25;
+        }
+        // Fade out
+        const alpha = Math.min(1, d.life / (d.maxLife * 0.3));
+        (d.mesh.material as THREE.MeshStandardMaterial).opacity = alpha;
+        (d.mesh.material as THREE.MeshStandardMaterial).transparent = alpha < 1;
+        d.mesh.rotation.x += dt * 3;
+        d.mesh.rotation.z += dt * 2;
       }
 
       // ---- Sync projectiles ----
@@ -206,10 +344,14 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
         pm.position.set(p.x, p.y, p.z);
       }
-      // remove dead projectiles
+      // remove dead projectiles; shake camera on explosive impacts
       const liveProjIds = new Set(state.projectiles.map((p) => p.id));
       for (const [id, pm] of projMap) {
         if (!liveProjIds.has(id)) {
+          // If it was an explosive (scale > 1), shake camera
+          if (pm.scale.x > 1.5) {
+            camCtrl.shake(0.55);
+          }
           scene.remove(pm);
           (pm.material as THREE.Material).dispose();
           projMap.delete(id);
@@ -258,16 +400,25 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKey);
+      mount.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      mount.removeEventListener('wheel', handleWheel);
       for (const m of meshMap.values()) disposeGroup(m);
       for (const pm of projMap.values()) {
         (pm.material as THREE.Material).dispose();
       }
+      for (const d of debris) scene.remove(d.mesh);
       projGeo.dispose();
+      debrisGeo.dispose();
+      debrMats.forEach((m) => m.dispose());
       disposeGroup(arena.scenery);
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement);
       }
+      camControllerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
@@ -303,6 +454,31 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
               </div>
             </div>
           ) : null,
+        )}
+      </div>
+
+      {/* Camera mode buttons */}
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
+        {CAM_LABELS.map(({ mode, label, key }) => (
+          <button
+            key={mode}
+            onClick={() => switchCamMode(mode)}
+            className={`rounded border px-3 py-1 font-mono text-xs transition-colors
+              ${
+                camMode === mode
+                  ? 'border-amber-400/60 bg-amber-500/30 text-amber-300'
+                  : 'border-white/20 bg-black/50 text-gray-400 hover:bg-white/10 hover:text-white'
+              }`}
+          >
+            [{key}] {label}
+          </button>
+        ))}
+        {camMode === 'freeOrbit' && (
+          <div className="mt-1 text-center font-mono text-xs text-gray-500">
+            Drag to rotate
+            <br />
+            Scroll to zoom
+          </div>
         )}
       </div>
     </div>
