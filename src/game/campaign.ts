@@ -82,7 +82,7 @@ const ZONES: ZoneDef[] = [
   // Zone 3: industrial vs killerBots and robotTanks
   {
     arena: 'industrial',
-    baseCount: 18,
+    baseCount: 15,
     titles: ['Steel Rain', 'Factory Floor', 'Protocol Omega', 'Machine Heart', 'Cold Iron'],
     intro: 'The rogue factory builds an endless machine army.',
     blurb: (i) =>
@@ -224,7 +224,7 @@ export const CAMPAIGN: ChapterDef[] = (() => {
       const globalIdx = zone * 5 + zi;
       // total enemy count grows with chapter within the zone (+3..5 per step)
       const total = z.baseCount + zi * 4;
-      const statScale = 1 + globalIdx * 0.2;
+      const statScale = 1 + globalIdx * 0.13;
       const enemies = z.composition(total, zi + 1);
       const isFinal = globalIdx === 29;
 
