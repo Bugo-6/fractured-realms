@@ -33,7 +33,6 @@ function makeUnit(
 ): BattleUnit {
   const def = UNIT_DEFS[type];
   const stats = leveledStats(def, level);
-  // Difficulty curve: enemies scale hp/dmg by the chapter statScale multiplier.
   const hp = Math.round(stats.hp * statScale);
   const dmg = Math.round(stats.dmg * statScale);
   return {
@@ -66,7 +65,6 @@ function makeUnit(
   };
 }
 
-// Lay out an army in tidy ranks on one side of the field.
 function layoutArmy(
   army: { type: UnitTypeId; level: number }[],
   team: 'player' | 'enemy',
@@ -75,16 +73,14 @@ function layoutArmy(
 ): BattleUnit[] {
   const units: BattleUnit[] = [];
   const baseX = team === 'player' ? -26 : 26;
-  const dir = team === 'player' ? -1 : 1; // ranks march away from center
+  const dir = team === 'player' ? -1 : 1;
   const perCol = 6;
 
-  // Multi-lane flanking: split the enemy army into two groups that spawn from
-  // the top (+z) and bottom (-z) sides for a pincer attack.
   if (multiLane && team === 'enemy') {
     const half = Math.ceil(army.length / 2);
     army.forEach((entry, i) => {
       const inGroup = i < half ? i : i - half;
-      const flank = i < half ? -1 : 1; // group A from -z, group B from +z
+      const flank = i < half ? -1 : 1;
       const col = Math.floor(inGroup / perCol);
       const row = inGroup % perCol;
       const x = baseX + dir * col * 3.0;
@@ -106,7 +102,6 @@ function layoutArmy(
 
 export function createBattle(config: BattleConfig): BattleState {
   const enemyScale = config.statScale ?? 1;
-  // Player army deploys at full strength (no stat scaling). Enemies scale.
   const playerUnits = layoutArmy(config.playerArmy, 'player');
   const enemyUnits = layoutArmy(
     config.enemyArmy,
@@ -116,7 +111,6 @@ export function createBattle(config: BattleConfig): BattleState {
   );
   const allUnits = [...playerUnits, ...enemyUnits];
 
-  // Environmental hazard: open dunes reduce effective weapon range.
   if (config.arena === 'desertOpen') {
     for (const u of allUnits) {
       u.range *= 0.65;
@@ -152,8 +146,6 @@ export function createBattle(config: BattleConfig): BattleState {
   };
 }
 
-// Deploy a single unit from the player's pool during battle, paying its CP cost.
-// Returns true if the unit was deployed, false if there were not enough CP.
 export function deployUnit(
   state: BattleState,
   type: UnitTypeId,
@@ -162,20 +154,34 @@ export function deployUnit(
   const def = UNIT_DEFS[type];
   const cost = def.cost;
   if (state.commandPoints < cost) return false;
-  // Spawn at a random position on the player side.
-  const x = -30 + Math.random() * 10; // -30 .. -20
+  const x = -30 + Math.random() * 10;
   const z = FIELD_MIN_Z + Math.random() * (FIELD_MAX_Z - FIELD_MIN_Z);
   const unit = makeUnit(type, level, 'player', x, z);
   if (state.arena === 'desertOpen') unit.range *= 0.65;
   state.units.push(unit);
   state.commandPoints -= cost;
-  // If the fight was already considered "over" because the player had no units,
-  // un-finish it so the freshly deployed unit can fight.
   if (state.finished && state.winner === 'enemy') {
     state.finished = false;
     state.winner = null;
   }
   return true;
+}
+
+// Inject a unit on the enemy side during PvP (no CP cost, relayed from socket).
+export function injectEnemyUnit(
+  state: BattleState,
+  type: UnitTypeId,
+  level: number,
+): void {
+  const x = 26 + Math.random() * 8;
+  const z = FIELD_MIN_Z + Math.random() * (FIELD_MAX_Z - FIELD_MIN_Z);
+  const unit = makeUnit(type, level, 'enemy', x, z);
+  if (state.arena === 'desertOpen') unit.range *= 0.65;
+  state.units.push(unit);
+  if (state.finished && state.winner === 'player') {
+    state.finished = false;
+    state.winner = null;
+  }
 }
 
 function dist2(a: BattleUnit, bx: number, bz: number): number {
@@ -195,16 +201,13 @@ function findTarget(
   if (enemies.length === 0) return null;
 
   if (strategy === 'weakest') {
-    // Target unit with lowest HP ratio (medics, snipers tend to die first).
     return enemies.reduce((best, u) =>
       u.hp / u.maxHp < best.hp / best.maxHp ? u : best,
     );
   }
   if (strategy === 'mostDangerous') {
-    // Target unit with highest damage (snipers, heavy, mechs).
     return enemies.reduce((best, u) => (u.dmg > best.dmg ? u : best));
   }
-  // nearest (default)
   let best: BattleUnit | null = null;
   let bestD = Infinity;
   for (const u of enemies) {
@@ -219,25 +222,22 @@ function findTarget(
   return best;
 }
 
-// Pick a unit's targeting strategy. Feral hunt the weakest (medics/snipers),
-// Alpha hunt the most dangerous (heavies/mechs); everyone else picks nearest.
 function strategyFor(type: UnitTypeId): TargetStrategy {
   if (type === 'feral') return 'weakest';
   if (type === 'alpha') return 'mostDangerous';
   return 'nearest';
 }
 
-// Hard-counter damage multiplier: attacker damageType vs target armorType.
 function damageMultiplier(dmgType: DamageType, armorType: ArmorType): number {
   if (dmgType === 'bullet') {
     if (armorType === 'armored') return 0.25;
     if (armorType === 'heavy') return 0.12;
-    return 1.0; // vs flesh
+    return 1.0;
   }
   if (dmgType === 'explosive') {
     if (armorType === 'heavy') return 1.0;
     if (armorType === 'armored') return 1.0;
-    return 1.5; // extra vs flesh clusters
+    return 1.5;
   }
   if (dmgType === 'energy') {
     if (armorType === 'armored') return 1.8;
@@ -248,7 +248,6 @@ function damageMultiplier(dmgType: DamageType, armorType: ArmorType): number {
   return 1.0;
 }
 
-// Steer a candidate position out of any obstacle collision zone.
 function resolveCollisions(
   nx: number,
   nz: number,
@@ -267,7 +266,6 @@ function resolveCollisions(
   return { x: nx, z: nz };
 }
 
-// Heal target: find most-wounded friendly within range (excluding self).
 function findHealTarget(unit: BattleUnit, units: BattleUnit[]): BattleUnit | null {
   let best: BattleUnit | null = null;
   let bestMissing = 0;
@@ -307,7 +305,6 @@ function applyDamage(
     target.hp = 0;
     target.dying = true;
     target.deathTimer = 0;
-    // Command Points: award CP when a player kills an enemy.
     if (target.team === 'enemy') {
       state.commandPoints += state.cpPerKill;
       if (state.commandPoints > state.maxCP) state.maxCP = state.commandPoints;
@@ -315,13 +312,12 @@ function applyDamage(
   }
 }
 
-const DEATH_DURATION = 0.6; // seconds for fall-over animation
+const DEATH_DURATION = 0.6;
 const SPAWN_DURATION = 0.4;
 
-// Step the simulation forward by dt seconds.
 export function stepBattle(state: BattleState, dt: number): void {
   if (state.finished) {
-    // still advance death/projectile animations a little so visuals settle
+    // still advance death/projectile animations
   }
   state.elapsed += dt;
 
@@ -332,7 +328,6 @@ export function stepBattle(state: BattleState, dt: number): void {
   for (const unit of units) {
     if (!unit.alive) continue;
 
-    // tick transient timers
     if (unit.spawnTimer < SPAWN_DURATION) unit.spawnTimer += dt;
     if (unit.hitFlash > 0) unit.hitFlash = Math.max(0, unit.hitFlash - dt);
     if (unit.attackAnim > 0) unit.attackAnim = Math.max(0, unit.attackAnim - dt);
@@ -346,11 +341,9 @@ export function stepBattle(state: BattleState, dt: number): void {
       continue;
     }
 
-    // ---- Medic / healer behaviour ----
     if (unit.attackKind === 'heal') {
       const healTarget = findHealTarget(unit, units);
       if (healTarget) {
-        // move toward wounded ally if not in range, else heal
         const dx = healTarget.x - unit.x;
         const dz = healTarget.z - unit.z;
         const d = Math.hypot(dx, dz);
@@ -372,10 +365,8 @@ export function stepBattle(state: BattleState, dt: number): void {
         clampField(unit);
         continue;
       }
-      // No one to heal: advance with the army toward enemies but keep back.
     }
 
-    // ---- Combat behaviour ----
     let target: BattleUnit | null = null;
     if (unit.targetId != null) {
       const t = byId.get(unit.targetId);
@@ -394,7 +385,6 @@ export function stepBattle(state: BattleState, dt: number): void {
     unit.facing = Math.atan2(dx, dz);
 
     if (d > unit.range) {
-      // move toward target, steering around obstacles
       const step = unit.spd * dt;
       const moved = resolveCollisions(
         unit.x + (dx / d) * step,
@@ -405,7 +395,6 @@ export function stepBattle(state: BattleState, dt: number): void {
       unit.z = moved.z;
       clampField(unit);
     } else if (unit.cooldownTimer <= 0) {
-      // attack
       unit.cooldownTimer = unit.attackCooldown;
       unit.attackAnim = 0.25;
       const def = UNIT_DEFS[unit.type];
@@ -413,25 +402,17 @@ export function stepBattle(state: BattleState, dt: number): void {
       if (unit.attackKind === 'melee') {
         applyDamage(state, target, unit.dmg, unit.damageType);
       } else if (unit.attackKind === 'explosive') {
-        // splash damage around target
         spawnProjectile(state, unit, target, def.color, true);
       } else {
-        // ranged: spawn a projectile that will resolve on arrival
         spawnProjectile(state, unit, target, def.color, false);
       }
     }
   }
 
-  // ---- Special abilities ----
   updateSpecialAbilities(state, dt);
-
-  // ---- Environmental hazard: underground lava eruptions ----
   updateLavaEruption(state, dt);
-
-  // ---- Projectiles ----
   updateProjectiles(state, dt, byId);
 
-  // ---- Win check ----
   let pAlive = 0;
   let eAlive = 0;
   for (const u of units) {
@@ -443,8 +424,6 @@ export function stepBattle(state: BattleState, dt: number): void {
   state.playerAlive = pAlive;
   state.enemyAlive = eAlive;
 
-  // The player can still reinforce while they have a deployment pool and enough
-  // CP to field at least one more unit — an empty field is not yet a defeat.
   const canReinforce =
     state.hasDeployPool && state.commandPoints >= state.minDeployCost;
 
@@ -459,19 +438,17 @@ export function stepBattle(state: BattleState, dt: number): void {
   }
 }
 
-// ---- Special abilities ----
-
-const SUPPLY_DROP_INTERVAL = 12; // seconds
+const SUPPLY_DROP_INTERVAL = 12;
 const SUPPLY_DROP_RADIUS = 8;
 const SUPPLY_DROP_HEAL = 15;
 
-const OVERCLOCK_INTERVAL = 18; // seconds between overclock activations
-const OVERCLOCK_DURATION = 5; // seconds of boosted attack speed
-const OVERCLOCK_FREEZE = 2; // seconds frozen afterwards
+const OVERCLOCK_INTERVAL = 18;
+const OVERCLOCK_DURATION = 5;
+const OVERCLOCK_FREEZE = 2;
 
-const SUICIDE_TRIGGER_RANGE = 5; // distance to nearest enemy to consider charging
-const SUICIDE_BLAST_RADIUS = 6; // damage radius on self-destruct
-const SUICIDE_CLUSTER_MIN = 3; // enemies needed within blast radius to detonate
+const SUICIDE_TRIGGER_RANGE = 5;
+const SUICIDE_BLAST_RADIUS = 6;
+const SUICIDE_CLUSTER_MIN = 3;
 const SUICIDE_DMG_MULT = 2.5;
 
 function countEnemiesNear(
@@ -507,7 +484,6 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
         unit.specialCooldown -= dt;
         if (unit.specialCooldown <= 0) {
           unit.specialCooldown = SUPPLY_DROP_INTERVAL;
-          // AoE healing pulse to all friendly units within radius
           const r2 = SUPPLY_DROP_RADIUS * SUPPLY_DROP_RADIUS;
           for (const ally of units) {
             if (!ally.alive || ally.dying) continue;
@@ -523,28 +499,21 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
       }
 
       case 'suicideBomber': {
-        // Find nearest enemy
         let nearest: BattleUnit | null = null;
         let nearestD = Infinity;
         for (const other of units) {
           if (!other.alive || other.dying) continue;
           if (other.team === unit.team) continue;
           const d = dist2(unit, other.x, other.z);
-          if (d < nearestD) {
-            nearestD = d;
-            nearest = other;
-          }
+          if (d < nearestD) { nearestD = d; nearest = other; }
         }
         if (nearest) {
           const dist = Math.sqrt(nearestD);
-          // Enter suicide mode when close to an enemy cluster
           if (
             dist <= SUICIDE_TRIGGER_RANGE &&
-            countEnemiesNear(units, unit.team, unit.x, unit.z, SUICIDE_BLAST_RADIUS) >=
-              SUICIDE_CLUSTER_MIN
+            countEnemiesNear(units, unit.team, unit.x, unit.z, SUICIDE_BLAST_RADIUS) >= SUICIDE_CLUSTER_MIN
           ) {
             unit.suicideMode = true;
-            // Detonate: damage all enemies in blast radius, then kill self
             const r2 = SUICIDE_BLAST_RADIUS * SUICIDE_BLAST_RADIUS;
             for (const other of units) {
               if (!other.alive || other.dying) continue;
@@ -554,12 +523,8 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
               if (dx * dx + dz * dz > r2) continue;
               applyDamage(state, other, unit.dmg * SUICIDE_DMG_MULT, unit.damageType);
             }
-            // Kill self
             unit.hp = 0;
-            if (!unit.dying) {
-              unit.dying = true;
-              unit.deathTimer = 0;
-            }
+            if (!unit.dying) { unit.dying = true; unit.deathTimer = 0; }
           }
         }
         break;
@@ -571,17 +536,12 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
         if (unit.specialCooldown === undefined) unit.specialCooldown = OVERCLOCK_INTERVAL;
 
         if (unit.frozen) {
-          // Frozen freeze period after overclock
           unit.frozenTimer = (unit.frozenTimer ?? 0) - dt;
           unit.spd = 0;
-          if (unit.frozenTimer <= 0) {
-            unit.frozen = false;
-            unit.spd = unit.baseSpd;
-          }
+          if (unit.frozenTimer <= 0) { unit.frozen = false; unit.spd = unit.baseSpd; }
         } else if (unit.overclocked) {
           unit.overclockedTimer = (unit.overclockedTimer ?? 0) - dt;
           if (unit.overclockedTimer <= 0) {
-            // End overclock: restore attack speed, enter freeze
             unit.overclocked = false;
             unit.attackCooldown = unit.baseAttackCooldown;
             unit.frozen = true;
@@ -591,7 +551,6 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
         } else {
           unit.specialCooldown -= dt;
           if (unit.specialCooldown <= 0) {
-            // Activate overclock
             unit.specialCooldown = OVERCLOCK_INTERVAL;
             unit.overclocked = true;
             unit.overclockedTimer = OVERCLOCK_DURATION;
@@ -604,10 +563,8 @@ function updateSpecialAbilities(state: BattleState, dt: number): void {
   }
 }
 
-// ---- Environmental hazard: underground lava eruptions ----
-
-const ERUPTION_INTERVAL = 8; // seconds between eruptions
-const ERUPTION_DURATION = 2; // seconds an eruption stays active
+const ERUPTION_INTERVAL = 8;
+const ERUPTION_DURATION = 2;
 const ERUPTION_RADIUS = 2.5;
 const ERUPTION_DAMAGE = 15;
 
@@ -616,18 +573,15 @@ function updateLavaEruption(state: BattleState, dt: number): void {
   if (state.eruptionTimer === undefined) state.eruptionTimer = ERUPTION_INTERVAL;
 
   if (state.eruptionActive) {
-    // Active eruption damages units in the zone, then expires.
     const r2 = ERUPTION_RADIUS * ERUPTION_RADIUS;
     const ex = state.eruptionX ?? 0;
     const ez = state.eruptionZ ?? 0;
     for (const u of state.units) {
       if (!u.alive || u.dying) continue;
-      if (u.flying) continue; // flying units avoid ground lava
+      if (u.flying) continue;
       const dx = u.x - ex;
       const dz = u.z - ez;
-      if (dx * dx + dz * dz <= r2) {
-        applyDamage(state, u, ERUPTION_DAMAGE * dt);
-      }
+      if (dx * dx + dz * dz <= r2) applyDamage(state, u, ERUPTION_DAMAGE * dt);
     }
     state.eruptionTimer -= dt;
     if (state.eruptionTimer <= 0) {
@@ -637,7 +591,6 @@ function updateLavaEruption(state: BattleState, dt: number): void {
   } else {
     state.eruptionTimer -= dt;
     if (state.eruptionTimer <= 0) {
-      // Trigger a new eruption at a random position.
       state.eruptionActive = true;
       state.eruptionTimer = ERUPTION_DURATION;
       state.eruptionX = FIELD_MIN_X + Math.random() * (FIELD_MAX_X - FIELD_MIN_X);
@@ -670,8 +623,6 @@ function spawnProjectile(
     life: explosive ? 1.2 : 0.9,
     color,
   });
-  // store the intended damage/target hint via a side table-free approach:
-  // we resolve by proximity on update, using the firing unit's damage baked in.
   const last = state.projectiles[state.projectiles.length - 1] as ProjectileWithDmg;
   last.dmg = from.dmg;
   last.explosive = explosive;
@@ -696,7 +647,6 @@ function updateProjectiles(
     p.z += p.vz * dt;
     p.life -= dt;
 
-    // find nearest enemy of the projectile's team for a hit test
     let hit: BattleUnit | null = null;
     let hitD = p.explosive ? 2.2 : 1.4;
     hitD = hitD * hitD;
@@ -706,15 +656,11 @@ function updateProjectiles(
       const dx = u.x - p.x;
       const dz = u.z - p.z;
       const dd = dx * dx + dz * dz;
-      if (dd < hitD) {
-        hit = u;
-        break;
-      }
+      if (dd < hitD) { hit = u; break; }
     }
 
     if (hit) {
       if (p.explosive) {
-        // splash: damage everything near the impact
         for (const u of state.units) {
           if (!u.alive || u.dying) continue;
           if (u.team === p.team) continue;
@@ -729,10 +675,9 @@ function updateProjectiles(
       } else {
         applyDamage(state, hit, p.dmg, p.dmgType);
       }
-      continue; // projectile consumed
+      continue;
     }
 
-    // out of bounds or expired
     if (
       p.life <= 0 ||
       p.x < FIELD_MIN_X - 5 ||
