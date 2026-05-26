@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ArenaType, BattleConfig, UnitTypeId, RosterEntry } from '../game/types';
 import type { SpawnEvent } from '../multiplayer/types';
 import { ARENA_COLLISION_ZONES } from '../game/arenaBuilder';
@@ -28,7 +28,7 @@ export const PvPBattleScreen: React.FC<Props> = ({
   const injectRef = useRef<((type: UnitTypeId, level: number) => void) | null>(null);
   const endedRef = useRef(false);
 
-  const config: BattleConfig = {
+  const config = useMemo<BattleConfig>(() => ({
     arena,
     playerArmy: [],
     enemyArmy: [],
@@ -40,7 +40,22 @@ export const PvPBattleScreen: React.FC<Props> = ({
     pendingDeployments: roster.flatMap(r =>
       Array.from({ length: r.count }, () => ({ type: r.type, level: r.level }))
     ),
-  };
+  }), [arena, roster]);
+
+  const cards = useMemo(() => {
+    const pool = config.pendingDeployments ?? [];
+    const cardMap = new Map<string, { type: UnitTypeId; level: number; cost: number; name: string; color: number; count: number }>();
+    for (const p of pool) {
+      const key = `${p.type}_${p.level}`;
+      const ex = cardMap.get(key);
+      if (ex) ex.count++;
+      else {
+        const def = UNIT_DEFS[p.type];
+        cardMap.set(key, { type: p.type, level: p.level, cost: def.cost, name: def.name, color: def.color, count: 1 });
+      }
+    }
+    return [...cardMap.values()].sort((a, b) => a.cost - b.cost);
+  }, [config.pendingDeployments]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -79,20 +94,6 @@ export const PvPBattleScreen: React.FC<Props> = ({
 
   const registerInjectEnemy = useCallback(
     (fn: ((type: UnitTypeId, level: number) => void) | null) => { injectRef.current = fn; }, []);
-
-  // Build unique deploy cards
-  const pool = config.pendingDeployments ?? [];
-  const cardMap = new Map<string, { type: UnitTypeId; level: number; cost: number; name: string; color: number; count: number }>();
-  for (const p of pool) {
-    const key = `${p.type}_${p.level}`;
-    const ex = cardMap.get(key);
-    if (ex) ex.count++;
-    else {
-      const def = UNIT_DEFS[p.type];
-      cardMap.set(key, { type: p.type, level: p.level, cost: def.cost, name: def.name, color: def.color, count: 1 });
-    }
-  }
-  const cards = [...cardMap.values()].sort((a, b) => a.cost - b.cost);
 
   const deploy = useCallback((type: UnitTypeId, level: number) => {
     const ok = deployRef.current?.(type, level);
