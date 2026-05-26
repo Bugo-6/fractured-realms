@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import type { SavedBase } from '../multiplayer/types';
-import { fetchBases } from '../multiplayer/api';
+import { fetchBases, startRaid } from '../multiplayer/api';
 
 interface Props {
   playerId: string;
-  onRaid: (base: SavedBase) => void;
+  onRaid: (base: SavedBase, battleToken: string) => void;
   onBack: () => void;
 }
 
@@ -12,6 +12,7 @@ export const RaidLobby: React.FC<Props> = ({ playerId, onRaid, onBack }) => {
   const [bases, setBases] = useState<SavedBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [raiding, setRaiding] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBases(playerId)
@@ -19,6 +20,18 @@ export const RaidLobby: React.FC<Props> = ({ playerId, onRaid, onBack }) => {
       .catch(() => setError('Cannot reach server. Set VITE_SERVER_URL in .env.local'))
       .finally(() => setLoading(false));
   }, [playerId]);
+
+  const handleRaid = async (base: SavedBase) => {
+    setRaiding(base.id);
+    try {
+      const battleToken = await startRaid(base.id);
+      onRaid(base, battleToken);
+    } catch {
+      setError('Failed to start raid. Try again.');
+    } finally {
+      setRaiding(null);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-[#0a0a14] text-white">
@@ -45,9 +58,11 @@ export const RaidLobby: React.FC<Props> = ({ playerId, onRaid, onBack }) => {
                 </div>
                 <div className="text-xs text-gray-600">W {base.wins} / L {base.losses}</div>
               </div>
-              <button onClick={() => onRaid(base)}
-                className="rounded-md bg-orange-700 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white hover:bg-orange-600 transition-colors">
-                Raid
+              <button
+                onClick={() => handleRaid(base)}
+                disabled={raiding === base.id}
+                className="rounded-md bg-orange-700 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white hover:bg-orange-600 transition-colors disabled:opacity-50">
+                {raiding === base.id ? '...' : 'Raid'}
               </button>
             </div>
           ))}

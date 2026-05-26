@@ -1,10 +1,10 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { BattleConfig, RosterEntry, SaveState, UnitTypeId, ArenaType } from './game/types';
 import type { SavedBase } from './multiplayer/types';
 import { CAMPAIGN } from './game/campaign';
 import { defaultSave, loadSave, writeSave } from './game/campaign';
 import { ARENA_COLLISION_ZONES } from './game/arenaBuilder';
-import { reportRaidResult } from './multiplayer/api';
+import { authPlayer, reportRaidResult } from './multiplayer/api';
 
 import { MainMenu } from './screens/MainMenu';
 import { CampaignMap } from './screens/CampaignMap';
@@ -44,9 +44,14 @@ export default function App() {
   const [sandboxConfig, setSandboxConfig] = useState<BattleConfig | null>(null);
   const [pvpRoom, setPvpRoom] = useState<{ roomId: string; side: 'left' | 'right'; arena: ArenaType; opponentName: string } | null>(null);
   const [raidBase, setRaidBase] = useState<SavedBase | null>(null);
+  const [raidBattleToken, setRaidBattleToken] = useState<string | null>(null);
 
   const playerId = useMemo(() => getOrCreatePlayerId(), []);
   const playerName = `CMD-${playerId.slice(-4).toUpperCase()}`;
+
+  useEffect(() => {
+    authPlayer(playerId).catch(() => {});
+  }, [playerId]);
 
   const persist = useCallback((next: SaveState) => { setSave(next); writeSave(next); }, []);
 
@@ -120,7 +125,11 @@ export default function App() {
     return (
       <RaidLobby
         playerId={playerId}
-        onRaid={(base) => { setRaidBase(base); setScreen('raidBattle'); }}
+        onRaid={(base, battleToken) => {
+          setRaidBase(base);
+          setRaidBattleToken(battleToken);
+          setScreen('raidBattle');
+        }}
         onBack={() => setScreen('multiplayerMenu')}
       />
     );
@@ -147,7 +156,9 @@ export default function App() {
         config={raidConfig}
         title={`Raiding ${raidBase.playerName}'s Base`}
         onEnd={(winner) => {
-          reportRaidResult(raidBase.id, winner === 'player').catch(() => {});
+          if (raidBattleToken) {
+            reportRaidResult(raidBase.id, winner === 'player', raidBattleToken).catch(() => {});
+          }
           setScreen('raidLobby');
         }}
       />
