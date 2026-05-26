@@ -36,6 +36,10 @@ export function getBaseByPlayer(playerId: string): SavedBase | null {
   return [...store.values()].find(b => b.playerId === playerId) ?? null;
 }
 
+export function getBaseById(id: string): SavedBase | null {
+  return store.get(id) ?? null;
+}
+
 export function listBases(excludePlayerId?: string, limit = 20): SavedBase[] {
   return [...store.values()]
     .filter(b => !excludePlayerId || b.playerId !== excludePlayerId)
