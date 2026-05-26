@@ -1,8 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import type { BattleConfig, RosterEntry, SaveState, UnitTypeId } from './game/types';
+import type { BattleConfig, RosterEntry, SaveState, UnitTypeId, ArenaType } from './game/types';
+import type { SavedBase } from './multiplayer/types';
 import { CAMPAIGN } from './game/campaign';
 import { defaultSave, loadSave, writeSave } from './game/campaign';
 import { ARENA_COLLISION_ZONES } from './game/arenaBuilder';
+import { reportRaidResult } from './multiplayer/api';
 
 import { MainMenu } from './screens/MainMenu';
 import { CampaignMap } from './screens/CampaignMap';
@@ -11,16 +13,26 @@ import { BattleScreen } from './screens/BattleScreen';
 import { PostBattle } from './screens/PostBattle';
 import { Ending } from './screens/Ending';
 import { SandboxSetup } from './screens/SandboxSetup';
+import { MultiplayerMenu } from './screens/MultiplayerMenu';
+import { PvPLobby } from './screens/PvPLobby';
+import { PvPBattleScreen } from './screens/PvPBattleScreen';
+import { BaseEditor } from './screens/BaseEditor';
+import { RaidLobby } from './screens/RaidLobby';
+
+function getOrCreatePlayerId(): string {
+  const key = 'wc_player_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
 
 type Screen =
-  | 'menu'
-  | 'campaign'
-  | 'preBattle'
-  | 'battle'
-  | 'postBattle'
-  | 'ending'
-  | 'sandboxSetup'
-  | 'sandboxBattle';
+  | 'menu' | 'campaign' | 'preBattle' | 'battle' | 'postBattle' | 'ending'
+  | 'sandboxSetup' | 'sandboxBattle'
+  | 'multiplayerMenu' | 'pvpLobby' | 'pvpBattle' | 'baseEditor' | 'raidLobby' | 'raidBattle';
 
 export default function App() {
   const [save, setSave] = useState<SaveState>(() => loadSave() ?? defaultSave());
@@ -30,52 +42,128 @@ export default function App() {
   const [battleConfig, setBattleConfig] = useState<BattleConfig | null>(null);
   const [battleResult, setBattleResult] = useState<'player' | 'enemy' | null>(null);
   const [sandboxConfig, setSandboxConfig] = useState<BattleConfig | null>(null);
+  const [pvpRoom, setPvpRoom] = useState<{ roomId: string; side: 'left' | 'right'; arena: ArenaType; opponentName: string } | null>(null);
+  const [raidBase, setRaidBase] = useState<SavedBase | null>(null);
 
-  const persist = useCallback((next: SaveState) => {
-    setSave(next);
-    writeSave(next);
-  }, []);
+  const playerId = useMemo(() => getOrCreatePlayerId(), []);
+  const playerName = `CMD-${playerId.slice(-4).toUpperCase()}`;
+
+  const persist = useCallback((next: SaveState) => { setSave(next); writeSave(next); }, []);
 
   const chapter = useMemo(
     () => CAMPAIGN.find((c) => c.id === activeChapter) ?? CAMPAIGN[0],
     [activeChapter],
   );
 
-  // ---- Menu ----
   if (screen === 'menu') {
     return (
       <MainMenu
         hasSave={hasSave}
-        onStartCampaign={() => {
-          const fresh = defaultSave();
-          persist(fresh);
-          setActiveChapter(0);
-          setScreen('campaign');
-        }}
-        onContinue={() => {
-          setActiveChapter(save.currentChapter);
-          setScreen('campaign');
-        }}
+        onStartCampaign={() => { persist(defaultSave()); setActiveChapter(0); setScreen('campaign'); }}
+        onContinue={() => { setActiveChapter(save.currentChapter); setScreen('campaign'); }}
         onSandbox={() => setScreen('sandboxSetup')}
+        onMultiplayer={() => setScreen('multiplayerMenu')}
       />
     );
   }
 
-  // ---- Campaign map ----
+  if (screen === 'multiplayerMenu') {
+    return (
+      <MultiplayerMenu
+        onPvP={() => setScreen('pvpLobby')}
+        onEditBase={() => setScreen('baseEditor')}
+        onRaid={() => setScreen('raidLobby')}
+        onBack={() => setScreen('menu')}
+      />
+    );
+  }
+
+  if (screen === 'pvpLobby') {
+    return (
+      <PvPLobby
+        playerId={playerId}
+        playerName={playerName}
+        onMatchFound={(roomId, side, arena, opponentName) => {
+          setPvpRoom({ roomId, side, arena, opponentName });
+          setScreen('pvpBattle');
+        }}
+        onBack={() => setScreen('multiplayerMenu')}
+      />
+    );
+  }
+
+  if (screen === 'pvpBattle' && pvpRoom) {
+    return (
+      <PvPBattleScreen
+        roomId={pvpRoom.roomId}
+        side={pvpRoom.side}
+        arena={pvpRoom.arena}
+        opponentName={pvpRoom.opponentName}
+        roster={save.roster}
+        onEnd={() => setScreen('pvpLobby')}
+      />
+    );
+  }
+
+  if (screen === 'baseEditor') {
+    return (
+      <BaseEditor
+        playerId={playerId}
+        playerName={playerName}
+        unlockedUnits={save.unlocked}
+        onBack={() => setScreen('multiplayerMenu')}
+      />
+    );
+  }
+
+  if (screen === 'raidLobby') {
+    return (
+      <RaidLobby
+        playerId={playerId}
+        onRaid={(base) => { setRaidBase(base); setScreen('raidBattle'); }}
+        onBack={() => setScreen('multiplayerMenu')}
+      />
+    );
+  }
+
+  if (screen === 'raidBattle' && raidBase) {
+    const raidConfig: BattleConfig = {
+      arena: raidBase.arena,
+      playerArmy: [],
+      enemyArmy: raidBase.defense.flatMap(d =>
+        Array.from({ length: d.count }, () => ({ type: d.type as UnitTypeId, level: d.level }))
+      ),
+      statScale: 1,
+      multiLane: false,
+      collisionZones: ARENA_COLLISION_ZONES[raidBase.arena],
+      startingCP: 150,
+      cpPerKill: 15,
+      pendingDeployments: save.roster.flatMap(r =>
+        Array.from({ length: r.count }, () => ({ type: r.type, level: r.level }))
+      ),
+    };
+    return (
+      <BattleScreen
+        config={raidConfig}
+        title={`Raiding ${raidBase.playerName}'s Base`}
+        onEnd={(winner) => {
+          reportRaidResult(raidBase.id, winner === 'player').catch(() => {});
+          setScreen('raidLobby');
+        }}
+      />
+    );
+  }
+
   if (screen === 'campaign') {
     return (
       <CampaignMap
         save={save}
-        onSelectChapter={(id) => {
-          setActiveChapter(id);
-          setScreen('preBattle');
-        }}
+        onSelectChapter={(id) => { setActiveChapter(id); setScreen('preBattle'); }}
         onMenu={() => setScreen('menu')}
       />
     );
   }
 
-  // ---- Pre-battle: story + army builder ----
   if (screen === 'preBattle') {
     return (
       <PreBattle
@@ -84,17 +172,12 @@ export default function App() {
         onBack={() => setScreen('campaign')}
         onUpdateRoster={(roster, gold) => persist({ ...save, roster, gold })}
         onLaunch={(playerArmy) => {
-          // CP scales gently with chapter; the player army becomes the
-          // deployment pool that is fed onto the field during battle.
           const startingCP = 60 + chapter.id * 6;
           setBattleConfig({
             arena: chapter.arena,
-            playerArmy: [], // player units are deployed during battle via CP
+            playerArmy: [],
             enemyArmy: chapter.enemies.flatMap((e) =>
-              Array.from({ length: e.count }, () => ({
-                type: e.type,
-                level: e.level ?? 1,
-              })),
+              Array.from({ length: e.count }, () => ({ type: e.type, level: e.level ?? 1 }))
             ),
             statScale: chapter.statScale,
             multiLane: chapter.multiLane,
@@ -109,29 +192,22 @@ export default function App() {
     );
   }
 
-  // ---- Battle ----
   if (screen === 'battle' && battleConfig) {
     return (
       <BattleScreen
         config={battleConfig}
         title={chapter.title}
-        onEnd={(winner) => {
-          setBattleResult(winner);
-          setScreen('postBattle');
-        }}
+        onEnd={(winner) => { setBattleResult(winner); setScreen('postBattle'); }}
       />
     );
   }
 
-  // ---- Post-battle ----
   if (screen === 'postBattle' && battleResult) {
     const isVictory = battleResult === 'player';
     const alreadyDone = save.completedChapters.includes(chapter.id);
     const goldEarned = isVictory && !alreadyDone ? chapter.reward : 0;
-    const newUnlocks: UnitTypeId[] =
-      isVictory && !alreadyDone ? chapter.unlocks ?? [] : [];
+    const newUnlocks: UnitTypeId[] = isVictory && !alreadyDone ? chapter.unlocks ?? [] : [];
     const isLast = chapter.id === CAMPAIGN.length - 1;
-
     return (
       <PostBattle
         result={battleResult}
@@ -141,84 +217,42 @@ export default function App() {
         save={save}
         onApplyRewards={() => {
           if (!isVictory) return save;
-          const unlocked = [
-            ...save.unlocked,
-            ...newUnlocks.filter((u) => !save.unlocked.includes(u)),
-          ];
-          // grant one free copy of each newly unlocked unit
+          const unlocked = [...save.unlocked, ...newUnlocks.filter(u => !save.unlocked.includes(u))];
           const roster: RosterEntry[] = [...save.roster];
           for (const u of newUnlocks) {
-            if (!roster.find((r) => r.type === u)) {
-              roster.push({ type: u, count: 1, level: 1 });
-            }
+            if (!roster.find(r => r.type === u)) roster.push({ type: u, count: 1, level: 1 });
           }
-          const nextChapter = alreadyDone
-            ? save.currentChapter
-            : Math.min(CAMPAIGN.length - 1, chapter.id + 1);
-          const completed = alreadyDone
-            ? save.completedChapters
-            : [...save.completedChapters, chapter.id];
-          const next: SaveState = {
-            ...save,
-            gold: save.gold + goldEarned,
-            unlocked,
-            roster,
-            completedChapters: completed,
-            currentChapter: nextChapter,
-          };
+          const nextChapter = alreadyDone ? save.currentChapter : Math.min(CAMPAIGN.length - 1, chapter.id + 1);
+          const completed = alreadyDone ? save.completedChapters : [...save.completedChapters, chapter.id];
+          const next: SaveState = { ...save, gold: save.gold + goldEarned, unlocked, roster, completedChapters: completed, currentChapter: nextChapter };
           persist(next);
           return next;
         }}
         onUpgrade={(roster, gold) => persist({ ...save, roster, gold })}
         onContinue={() => {
-          if (isVictory && isLast && !alreadyDone) {
-            setScreen('ending');
-          } else if (isVictory) {
-            setScreen('campaign');
-          } else {
-            setScreen('preBattle');
-          }
+          if (isVictory && isLast && !alreadyDone) setScreen('ending');
+          else if (isVictory) setScreen('campaign');
+          else setScreen('preBattle');
         }}
       />
     );
   }
 
-  // ---- Ending ----
-  if (screen === 'ending') {
-    return (
-      <Ending
-        onMainMenu={() => {
-          setScreen('menu');
-        }}
-      />
-    );
-  }
+  if (screen === 'ending') return <Ending onMainMenu={() => setScreen('menu')} />;
 
-  // ---- Sandbox setup ----
   if (screen === 'sandboxSetup') {
     return (
       <SandboxSetup
         onBack={() => setScreen('menu')}
-        onLaunch={(config) => {
-          setSandboxConfig(config);
-          setScreen('sandboxBattle');
-        }}
+        onLaunch={(config) => { setSandboxConfig(config); setScreen('sandboxBattle'); }}
       />
     );
   }
 
-  // ---- Sandbox battle ----
   if (screen === 'sandboxBattle' && sandboxConfig) {
-    return (
-      <BattleScreen
-        config={sandboxConfig}
-        title="Sandbox Skirmish"
-        onEnd={() => setScreen('sandboxSetup')}
-      />
-    );
+    return <BattleScreen config={sandboxConfig} title="Sandbox Skirmish" onEnd={() => setScreen('sandboxSetup')} />;
   }
 
-  // Fallback
   setScreen('menu');
   return null;
 }

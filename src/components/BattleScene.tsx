@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import type { BattleConfig, BattleState, UnitTypeId } from '../game/types';
-import { createBattle, stepBattle, deployUnit } from '../game/engine';
+import { createBattle, stepBattle, deployUnit, injectEnemyUnit } from '../game/engine';
 import { buildUnitModel } from '../game/unitModels';
 import { buildArena } from '../game/arenaBuilder';
 import { CameraController, type CameraMode } from '../game/cameraSystem';
@@ -13,17 +13,16 @@ import { CameraController, type CameraMode } from '../game/cameraSystem';
 interface BattleSceneProps {
   config: BattleConfig;
   paused: boolean;
-  speed: number; // sim speed multiplier
+  speed: number;
   onFinished: (winner: 'player' | 'enemy') => void;
-  // Command-point deployment integration (optional).
   onCPUpdate?: (cp: number, maxCp: number) => void;
-  // Receives a deploy function the parent can call to deploy a unit type.
   registerDeploy?: (fn: ((type: UnitTypeId, level: number) => boolean) | null) => void;
+  registerInjectEnemy?: (fn: ((type: UnitTypeId, level: number) => void) | null) => void;
 }
 
 interface HealthBar {
   id: number;
-  x: number; // screen px
+  x: number;
   y: number;
   ratio: number;
   team: 'player' | 'enemy';
@@ -55,12 +54,12 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   onFinished,
   onCPUpdate,
   registerDeploy,
+  registerInjectEnemy,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [bars, setBars] = useState<HealthBar[]>([]);
   const [camMode, setCamMode] = useState<CameraMode>('tactical');
 
-  // Refs that survive across the animation loop without re-rendering.
   const pausedRef = useRef(paused);
   const speedRef = useRef(speed);
   const finishedRef = useRef(false);
@@ -69,18 +68,10 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   const camControllerRef = useRef<CameraController | null>(null);
   const camModeRef = useRef<CameraMode>('tactical');
 
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
-  useEffect(() => {
-    speedRef.current = speed;
-  }, [speed]);
-  useEffect(() => {
-    onFinishedRef.current = onFinished;
-  }, [onFinished]);
-  useEffect(() => {
-    onCPUpdateRef.current = onCPUpdate;
-  }, [onCPUpdate]);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { onFinishedRef.current = onFinished; }, [onFinished]);
+  useEffect(() => { onCPUpdateRef.current = onCPUpdate; }, [onCPUpdate]);
 
   const switchCamMode = useCallback((mode: CameraMode) => {
     camModeRef.current = mode;
@@ -94,7 +85,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
 
     finishedRef.current = false;
 
-    // ---- Scene / camera / renderer ----
     const scene = new THREE.Scene();
     const arena = buildArena(config.arena);
     scene.background = new THREE.Color(arena.background);
@@ -107,7 +97,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     camera.position.set(0, 28, 22);
     camera.lookAt(0, 0, 0);
 
-    // Camera controller (4 modes) — arena-aware tactical framing
     const camCtrl = new CameraController(camera, config.arena);
     camCtrl.setMode(camModeRef.current);
     camControllerRef.current = camCtrl;
@@ -119,7 +108,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
 
-    // ---- Lighting ----
     const ambient = new THREE.AmbientLight(arena.ambient, arena.ambientIntensity);
     scene.add(ambient);
     const sun = new THREE.DirectionalLight(arena.sun, arena.sunIntensity);
@@ -137,7 +125,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       for (const l of arena.extraLights) scene.add(l);
     }
 
-    // ---- Build initial battle state + meshes ----
     const state: BattleState = createBattle(config);
     const meshMap = new Map<number, THREE.Group>();
     for (const u of state.units) {
@@ -148,20 +135,18 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       meshMap.set(u.id, m);
     }
 
-    // Track which units were alive last frame to detect deaths.
     const wasAlive = new Map<number, boolean>();
     for (const u of state.units) wasAlive.set(u.id, true);
 
-    // ---- Command-point deployment ----
-    // Expose a deploy function to the parent. Newly spawned units get their mesh
-    // created lazily in the unit sync loop below.
     if (registerDeploy) {
       registerDeploy((type, level) => deployUnit(state, type, level));
+    }
+    if (registerInjectEnemy) {
+      registerInjectEnemy((type, level) => injectEnemyUnit(state, type, level));
     }
     let cpAccum = 0;
     let lastReportedCP = -1;
 
-    // ---- Debris particles (robot death bursts) ----
     const debris: DebrisParticle[] = [];
     const debrisGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
     const debrMats = [
@@ -190,11 +175,9 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       }
     }
 
-    // Projectile meshes pooled by id
     const projMap = new Map<number, THREE.Mesh>();
     const projGeo = new THREE.SphereGeometry(0.18, 6, 6);
 
-    // ---- Resize handling ----
     const handleResize = () => {
       const w = mount.clientWidth || window.innerWidth;
       const h = mount.clientHeight || window.innerHeight;
@@ -204,7 +187,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // ---- Keyboard camera switch (keys 1-4) ----
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === '1') switchCamMode('tactical');
       else if (e.key === '2') switchCamMode('action');
@@ -213,7 +195,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     };
     window.addEventListener('keydown', handleKey);
 
-    // ---- Mouse events for free orbit ----
     const handleMouseDown = (e: MouseEvent) => camCtrl.onMouseDown(e);
     const handleMouseMove = (e: MouseEvent) => camCtrl.onMouseMove(e);
     const handleMouseUp = () => camCtrl.onMouseUp();
@@ -223,7 +204,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
     window.addEventListener('mouseup', handleMouseUp);
     mount.addEventListener('wheel', handleWheel, { passive: true });
 
-    // ---- Animation loop ----
     let raf = 0;
     let last = performance.now();
     const tmpVec = new THREE.Vector3();
@@ -233,21 +213,18 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       raf = requestAnimationFrame(tick);
       let dt = (now - last) / 1000;
       last = now;
-      if (dt > 0.05) dt = 0.05; // clamp big frame gaps
+      if (dt > 0.05) dt = 0.05;
 
       if (!pausedRef.current) {
         const simDt = dt * speedRef.current;
-        // sub-step for stability at high speed
         const steps = Math.max(1, Math.ceil(speedRef.current));
         for (let s = 0; s < steps; s++) {
           stepBattle(state, simDt / steps);
         }
       }
 
-      // ---- Update camera ----
       camCtrl.update(dt, state.units);
 
-      // ---- Report command points to parent (throttled) ----
       cpAccum += dt;
       if (cpAccum > 0.1) {
         cpAccum = 0;
@@ -257,7 +234,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
       }
 
-      // ---- Animate environmental hazards (sandstorm sheets, lava warnings) ----
       arena.scenery.children.forEach((child) => {
         if (child.name?.startsWith('sandsheet_')) {
           child.position.x += dt * 3;
@@ -267,16 +243,12 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         if (child.name?.startsWith('lavawarning_')) {
           const pulse = 0.5 + Math.sin(state.elapsed * 3 + child.position.x) * 0.5;
           const lm = (child as THREE.Mesh).material;
-          if (lm) {
-            (lm as THREE.MeshStandardMaterial).emissiveIntensity = 0.4 + pulse * 1.2;
-          }
+          if (lm) (lm as THREE.MeshStandardMaterial).emissiveIntensity = 0.4 + pulse * 1.2;
         }
       });
 
-      // ---- Sync unit meshes ----
       for (const u of state.units) {
         let m = meshMap.get(u.id);
-        // Lazily create a mesh for units deployed mid-battle.
         if (!m && u.alive) {
           m = buildUnitModel(u.type, u.level, u.team);
           m.position.set(u.x, u.flying ? 1.4 : 0, u.z);
@@ -295,7 +267,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
           continue;
         }
 
-        // Detect death this frame -> spawn debris for robots
         if (u.dying && wasAlive.get(u.id) && ROBOT_TYPES.has(u.type)) {
           spawnDebris(u.x, 0, u.z);
           camCtrl.shake(0.4);
@@ -307,7 +278,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         m.position.z = u.z;
         m.rotation.y = u.facing;
 
-        // spawn rise
         let y = baseY;
         if (u.spawnTimer < 0.4) {
           const t = u.spawnTimer / 0.4;
@@ -315,7 +285,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
 
         if (u.dying) {
-          // fall-over animation: tip forward and sink
           const t = Math.min(1, u.deathTimer / 0.6);
           m.rotation.x = t * (Math.PI / 2) * 0.9;
           y = baseY - t * 0.4;
@@ -323,46 +292,32 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
           m.scale.setScalar(sc * (m.userData.baseScale ?? 1));
         } else {
           m.rotation.x = 0;
-          // subtle bob while moving / idle breathing
           y += Math.sin((state.elapsed + u.id) * 6) * (u.flying ? 0.12 : 0.03);
-          // attack lunge
           if (u.attackAnim > 0) {
             y += Math.sin((1 - u.attackAnim / 0.25) * Math.PI) * 0.1;
           }
         }
         m.position.y = y;
 
-        // hit flash: tint via emissive on the figure's meshes
         applyHitFlash(m, u.hitFlash);
 
-        // rotate war drone rotors / spin aura
-        if (u.flying) {
-          m.children[0].rotation.y += dt * 25;
-        }
+        if (u.flying) m.children[0].rotation.y += dt * 25;
         const aura = m.children.find((c) => c.name === 'aura');
         if (aura) aura.rotation.z += dt * 2;
       }
 
-      // ---- Update debris ----
       for (let i = debris.length - 1; i >= 0; i--) {
         const d = debris[i];
         d.life -= dt;
-        if (d.life <= 0) {
-          scene.remove(d.mesh);
-          debris.splice(i, 1);
-          continue;
-        }
-        d.vy -= 9.8 * dt; // gravity
+        if (d.life <= 0) { scene.remove(d.mesh); debris.splice(i, 1); continue; }
+        d.vy -= 9.8 * dt;
         d.mesh.position.x += d.vx * dt;
         d.mesh.position.y += d.vy * dt;
         d.mesh.position.z += d.vz * dt;
         if (d.mesh.position.y < 0.09) {
           d.mesh.position.y = 0.09;
-          d.vx *= 0.6;
-          d.vz *= 0.6;
-          d.vy *= -0.25;
+          d.vx *= 0.6; d.vz *= 0.6; d.vy *= -0.25;
         }
-        // Fade out
         const alpha = Math.min(1, d.life / (d.maxLife * 0.3));
         (d.mesh.material as THREE.MeshStandardMaterial).opacity = alpha;
         (d.mesh.material as THREE.MeshStandardMaterial).transparent = alpha < 1;
@@ -370,7 +325,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         d.mesh.rotation.z += dt * 2;
       }
 
-      // ---- Sync projectiles ----
       for (const p of state.projectiles) {
         let pm = projMap.get(p.id);
         if (!pm) {
@@ -382,21 +336,16 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         }
         pm.position.set(p.x, p.y, p.z);
       }
-      // remove dead projectiles; shake camera on explosive impacts
       const liveProjIds = new Set(state.projectiles.map((p) => p.id));
       for (const [id, pm] of projMap) {
         if (!liveProjIds.has(id)) {
-          // If it was an explosive (scale > 1), shake camera
-          if (pm.scale.x > 1.5) {
-            camCtrl.shake(0.55);
-          }
+          if (pm.scale.x > 1.5) camCtrl.shake(0.55);
           scene.remove(pm);
           (pm.material as THREE.Material).dispose();
           projMap.delete(id);
         }
       }
 
-      // ---- Health bar overlay (throttled to ~20fps) ----
       barAccum += dt;
       if (barAccum > 0.05) {
         barAccum = 0;
@@ -424,17 +373,14 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
 
       renderer.render(scene, camera);
 
-      // ---- Finish handling ----
       if (state.finished && !finishedRef.current) {
         finishedRef.current = true;
         const winner = state.winner ?? 'enemy';
-        // brief delay so the last death animation plays
         window.setTimeout(() => onFinishedRef.current(winner), 1100);
       }
     };
     raf = requestAnimationFrame(tick);
 
-    // ---- Cleanup ----
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', handleResize);
@@ -444,50 +390,35 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       mount.removeEventListener('wheel', handleWheel);
       for (const m of meshMap.values()) disposeGroup(m);
-      for (const pm of projMap.values()) {
-        (pm.material as THREE.Material).dispose();
-      }
+      for (const pm of projMap.values()) (pm.material as THREE.Material).dispose();
       for (const d of debris) scene.remove(d.mesh);
       projGeo.dispose();
       debrisGeo.dispose();
       debrMats.forEach((m) => m.dispose());
       disposeGroup(arena.scenery);
       renderer.dispose();
-      if (renderer.domElement.parentNode === mount) {
-        mount.removeChild(renderer.domElement);
-      }
+      if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       camControllerRef.current = null;
       if (registerDeploy) registerDeploy(null);
+      if (registerInjectEnemy) registerInjectEnemy(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
   return (
     <div ref={mountRef} className="absolute inset-0 overflow-hidden">
-      {/* Health bar overlay */}
       <div className="pointer-events-none absolute inset-0">
         {bars.map((b) =>
           b.visible ? (
-            <div
-              key={b.id}
-              className="absolute"
-              style={{
-                left: b.x - 18,
-                top: b.y,
-                width: 36,
-              }}
-            >
+            <div key={b.id} className="absolute" style={{ left: b.x - 18, top: b.y, width: 36 }}>
               <div className="h-1.5 w-full rounded-sm bg-black/60 ring-1 ring-black/40">
                 <div
                   className="h-full rounded-sm transition-[width] duration-100"
                   style={{
                     width: `${b.ratio * 100}%`,
-                    background:
-                      b.team === 'player'
-                        ? b.ratio > 0.4
-                          ? '#22c55e'
-                          : '#eab308'
-                        : '#ef4444',
+                    background: b.team === 'player'
+                      ? b.ratio > 0.4 ? '#22c55e' : '#eab308'
+                      : '#ef4444',
                   }}
                 />
               </div>
@@ -496,7 +427,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         )}
       </div>
 
-      {/* Camera mode buttons */}
       <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
         {CAM_LABELS.map(({ mode, label, key }) => (
           <button
@@ -514,9 +444,7 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
         ))}
         {camMode === 'freeOrbit' && (
           <div className="mt-1 text-center font-mono text-xs text-gray-500">
-            Drag to rotate
-            <br />
-            Scroll to zoom
+            Drag to rotate<br />Scroll to zoom
           </div>
         )}
       </div>
@@ -524,7 +452,6 @@ export const BattleScene: React.FC<BattleSceneProps> = ({
   );
 };
 
-// Apply a brief white/red emissive flash on hit to all meshes in a group.
 function applyHitFlash(group: THREE.Group, flash: number): void {
   group.traverse((obj) => {
     const me = obj as THREE.Mesh;
@@ -550,13 +477,9 @@ function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     const me = obj as THREE.Mesh;
     if (me.isMesh) {
-      // Geometry may be shared (cached) — dispose materials only to be safe
       const mat = me.material;
-      if (Array.isArray(mat)) {
-        mat.forEach((m) => m.dispose());
-      } else if (mat) {
-        mat.dispose();
-      }
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else if (mat) mat.dispose();
     }
   });
 }
