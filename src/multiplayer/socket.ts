@@ -31,7 +31,10 @@ export function getSocket(): GameSocket {
 }
 
 export function connect(): void {
-  getSocket().connect();
+  const s = getSocket();
+  const token = localStorage.getItem('wc_jwt');
+  if (token) (s as any).auth = { token };
+  s.connect();
 }
 
 export function disconnect(): void {
